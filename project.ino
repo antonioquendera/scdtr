@@ -63,24 +63,7 @@ void loop() {
 
   // Check if the required interval has passed
   if (currentTime - previousTime > sampInterval) {
-      // Update the previous time
-      unsigned long actualTimeInterval = currentTime - previousTime;
-
-      // Calculate deviation from the desired sampling rate
-      long deviation = actualTimeInterval - sampInterval;  // Positive means slower, negative means faster
-
-      //Serial.print("Actual Interval: ");
-      //Serial.print(actualTimeInterval);
-      //Serial.print(" ms, Desired Interval: ");
-      //Serial.print(sampInterval);
-      //Serial.print(" ms, Deviation: ");
-      //Serial.println(deviation);
-
-      unsigned long startTime, endTime;
-
-      // Measure control computation time
-      startTime = micros();  // Start timer for control computation
-
+      
       int adcValue = analogRead(ANALOG_PIN);
       float voltage = (adcValue / 4095.0) * Vcc;
       float illuminance = Luxmeter(voltage);
@@ -92,21 +75,11 @@ void loop() {
       // Perform housekeeping on PID controller
       u_old = my_pid.housekeep(reference, illuminance, pwm_value);
 
-      endTime = micros();  // End timer for control computation
-
-      // Measure serial communication time
-      startTime = micros();  // Start timer for serial communication
-
       if (Serial.available()) {
           String command = Serial.readStringUntil('\n');
           command.trim();
           handleCommand(command);
       }
-
-      endTime = micros();  // End timer for serial communication
-
-      // Measure CAN-BUS communication time
-      startTime = micros();  // Start timer for CAN-BUS communication
 
       canMsgTx.can_id = node_address;
       canMsgTx.can_dlc = 1;
@@ -123,17 +96,6 @@ void loop() {
       while (can0.readMessage(&canMsgRx) == MCP2515::ERROR_OK) {
           Serial.printf("Received: %d from Node %x\n", canMsgRx.data[0], canMsgRx.can_id);
       }
-
-      // Print CAN message rate every second
-      if (millis() - lastTime >= interval) {
-          // Serial.print("CAN-BUS message rate: ");
-          // Serial.print(messageCount);  // Messages sent in the last second
-          // Serial.println(" messages/second");
-          messageCount = 0;  // Reset message count for next interval
-          lastTime = millis();
-      }
-
-      endTime = micros();  // End timer for CAN-BUS communication
 
       // Store duty cycle and illuminance in CircularBuffer
       dutyCycleBuffer.push(pwm_value / 4095.0);  // Normalize control signal to [0, 1]
