@@ -24,7 +24,8 @@ pid my_pid {0.01, 31.61, 1, 0.01 }; // K was previously 1
 MCP2515 can0 {spi0, 17, 19, 16, 18, 10000000}; // Initialize MCP2515
 pico_unique_board_id_t pico_board_id;
 struct can_frame canMsgTx, canMsgRx;
-uint8_t node_address; // Unique ID for each luminaire
+uint8_t node_address = 0x01; // Unique ID for each luminaire
+int int_node_address = node_address;
 
 unsigned long previousTime = 0;  // Last time an operation was performed
 unsigned long sampInterval = 1000; // Sampling interval
@@ -43,10 +44,18 @@ volatile bool got_irq = false;
 bool calibrationDone = false;
 uint8_t lowestNode = 255; // Initialize with a high value
 
+int calibrationCount = 0;
+bool loop1_flag = false;
+int counter = 0;
+const int num_iluminaires = 2;
+uint8_t node_addresses[num_iluminaires] = {0x00, 0x01};
+int gains[num_iluminaires] = {0, 0}; 
+
 void performCalibration() {
+    delay(1500);
     Serial.println("Calibrating...");
     float backgroundIlluminance = measureIlluminance();
-    Serial.printf("Background Illuminance (I_bg): %.2f lux\n", backgroundIlluminance);
+    //Serial.printf("Background Illuminance (I_bg): %.2f lux\n", backgroundIlluminance);
     
     float dutyCycles[] = {0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1};
     float illuminanceValues[11];
@@ -55,7 +64,7 @@ void performCalibration() {
         setDutyCycle(dutyCycles[i]);
         delay(500);
         illuminanceValues[i] = measureIlluminance();
-        Serial.printf("Duty Cycle: %.2f, Measured Illuminance: %.2f lux\n", dutyCycles[i], illuminanceValues[i]);
+        //Serial.printf("Duty Cycle: %.2f, Measured Illuminance: %.2f lux\n", dutyCycles[i], illuminanceValues[i]);
     }
     
     float sumGain = 0.0;
@@ -65,8 +74,9 @@ void performCalibration() {
     }
     
     float staticGain = sumGain / 10.0;
-    Serial.printf("Static Gain (K): %.2f lux/unit\n", staticGain);
-    Serial.println("Calibration done");
+    //Serial.printf("Static Gain (K): %.2f lux/unit\n", staticGain);
+    Serial.println("Calibration done"); 
+
 }
 
 
@@ -78,34 +88,17 @@ void setup() {
     analogWriteFreq(30000); // 30KHz PWM Frequency
     analogWriteRange(4095); // Max PWM value
 
-    // CAN-BUS setup
-    pico_get_unique_board_id(&pico_board_id);
-    node_addresses.push_back(pico_board_id.id[7]); // Use a unique part of the ID
-    if (pico_board_id.id[6] != pico_board_id.id[7]) {
-        node_addresses.push_back(pico_board_id.id[6]); // Assign second ID if needed
-    }
-
     can0.reset();
     can0.setBitrate(CAN_1000KBPS);
     can0.setNormalMode();
 
-    // Broadcast own IDs to determine lowest node
-    for (uint8_t id : node_addresses) {
-        canMsgTx.can_id = id;
-        canMsgTx.can_dlc = 1;
-        canMsgTx.data[0] = id;  // Sending the node ID
-        can0.sendMessage(&canMsgTx);
-    }
-
     // Set up CAN interrupt
-    const uint8_t interruptPin = 20;  // Define the interrupt pin
-    gpio_set_irq_enabled_with_callback(interruptPin, GPIO_IRQ_EDGE_FALL, true, &read_interrupt);
+    //const uint8_t interruptPin = 20;  // Define the interrupt pin
+    //gpio_set_irq_enabled_with_callback(interruptPin, GPIO_IRQ_EDGE_FALL, true, &read_interrupt);
 
     // Initialize the luminaires, just one for now
     initializeLuminaires(1);
-
-    // Start the second core
-    delay(1000);  // Allow some time for the second core to start
+    delay(10000);
     Serial.println("Setup complete");
 }
 
@@ -119,29 +112,50 @@ void loop() {
         handleCommand(command);
     }
 
+    if (!calibrationDone && int_node_address == 0) {
+      performCalibration();
+      calibrationDone = true;
+      canMsgTx.can_id = node_address;
+      canMsgTx.can_dlc = 1;
+      canMsgTx.data[0] = 0xFF;  // Signal calibration done
+      can0.sendMessage(&canMsgTx);
+      delay(1500);
+      setDutyCycle(0); 
+      calibrationCount++;
+    }
+
     // CAN message receiving
     while (can0.readMessage(&canMsgRx) == MCP2515::ERROR_OK) {
         uint8_t sender_id = canMsgRx.can_id;
+        int int_sender_id = sender_id;
         uint8_t received_data = canMsgRx.data[0];
+        Serial.print("Message:");
+        Serial.println(received_data);
+        //Serial.println(int_node_address);
 
-        if (!calibrationDone) {
-            if (received_data < lowestNode) {
-                lowestNode = received_data;
-            }
-            if (std::find(node_addresses.begin(), node_addresses.end(), lowestNode) != node_addresses.end()) {
-                Serial.println("Starting calibration");
+        if(received_data == 0xFF) {
+            gains[int_sender_id] = measureIlluminance();
+            calibrationCount++;
+            Serial.print("Measured Gain:");
+            Serial.println(gains[int_sender_id]);
+        }
+        if (!calibrationDone && received_data == 0xFF && int_sender_id == int_node_address - 1) {
                 performCalibration();
                 calibrationDone = true;
-                canMsgTx.can_id = lowestNode;
+                canMsgTx.can_id = node_address;
                 canMsgTx.can_dlc = 1;
                 canMsgTx.data[0] = 0xFF;  // Signal calibration done
                 can0.sendMessage(&canMsgTx);
-            }
-        } else if (received_data == 0xFF && sender_id == lowestNode) {
-            Serial.println("Calibration complete");
+                delay(1500);
+                setDutyCycle(0); 
+                calibrationCount++;
+        }
+        if (calibrationCount >= num_iluminaires) {
+            loop1_flag = true;
+            Serial.println("All luminaires calibrated");
         }
     }
-
+    /*
     // Print buffer data periodically
     if (circular_buffer == 1 && dutyCycleBuffer.isFull()) {
         circular_buffer = 0;
@@ -151,7 +165,7 @@ void loop() {
             Serial.print(illuminanceBuffer[i]);  // Print illuminance
             Serial.println();
         }
-    }
+    }*/
 
     previousTime = currentTime;
 }
@@ -163,7 +177,7 @@ void loop1() {
     uint32_t msg;
     uint8_t b[4];
 
-    while (true) {
+    while (loop1_flag) {
         unsigned long currentTime = micros();  // Current time in microseconds
 
         // Check if the required interval has passed
@@ -195,8 +209,8 @@ void loop1() {
 
             previousTime = currentTime;
         }
-
-        // Reading the CAN bus and writing to the FIFO
+        
+        /**        // Reading the CAN bus and writing to the FIFO
         if (got_irq) {
             got_irq = false;
             uint8_t irq = can0.getInterrupts();
@@ -226,5 +240,6 @@ void loop1() {
             uint8_t err = can0.getErrorFlags();
             rp2040.fifo.push_nb(error_flags_to_msg(irq, err));
         }
+            */
     }
 }

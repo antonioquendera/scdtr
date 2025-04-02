@@ -56,7 +56,7 @@ void setDutyCycle(float val);
 void getDutyCycle();
 void setIlluminanceRef(float val);
 void getIlluminanceRef();
-void measureIlluminance();
+int measureIlluminance();
 void measureLDRVoltage();
 void getEnergy();
 void getVisibilityError();

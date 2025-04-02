@@ -104,7 +104,7 @@ void setDutyCycle(float val) {
     pwm_value = constrain(pwm_value, 0, 4095);
     analogWrite(LED_PWM_PIN, pwm_value);
     dutyCycleBuffer.push(val);
-    Serial.println("ack");
+    //Serial.println("ack");
 }
 
 // Function to get Duty Cycle
@@ -128,12 +128,14 @@ void getIlluminanceRef() {
 }
 
 // Function to measure Illuminance
-void measureIlluminance() {
+int measureIlluminance() {
     int adcValue = analogRead(ANALOG_PIN);
     float voltage = (adcValue / 4095.0) * Vcc;
     float illuminance = Luxmeter(voltage);
     illuminanceBuffer.push(illuminance);
-    Serial.printf("y %.2f\n", illuminance);
+    //Serial.printf("y %.2f\n", illuminance);
+
+    return illuminance;
 }
 
 // Function to measure LDR Voltage
