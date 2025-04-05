@@ -21,11 +21,15 @@ struct Luminaire {
     unsigned long elapsed_time;
     std::vector<float> buffer_y;
     std::vector<float> buffer_u;
+    float occupied_lower_bound;
+    float unoccupied_lower_bound;
+    float current_lower_bound;
+    float energy_cost;
 };
 
 #define ANALOG_PIN 26      // Analog input pin
 #define LED_PWM_PIN 15     // PWM pin for LED control
-#define BUFFER_SIZE 600   // Stores last minute of data at 100Hz
+#define BUFFER_SIZE 600    // Stores last minute of data at 100Hz
 
 #define MAX_DESKS 1  // Adjust this based on your system's configuration
 
@@ -52,12 +56,12 @@ extern CircularBuffer<float, bufferSize> illuminanceBuffer;
 
 // Function declarations
 void handleCommand(String command);
-void setDutyCycle(float val);
-void getDutyCycle();
-void setIlluminanceRef(float val);
-void getIlluminanceRef();
-int measureIlluminance();
-void measureLDRVoltage();
+void setDutyCycle(int deskId, float val);
+void getDutyCycle(int deskId);
+void setIlluminanceRef(int deskId, float val);
+void getIlluminanceRef(int deskId);
+void measureIlluminance(int deskId);
+void measureLDRVoltage(int deskId);
 void getEnergy();
 void getVisibilityError();
 void getFlicker();
@@ -74,7 +78,7 @@ extern float calculateFlicker();
 extern void initializeLuminaires(int numLuminaires);
 
 // Function to start stream
-void startStream(char x, int deskId, float val, time_t time);
+void startStream(char x, int deskId, float val = 0, time_t time = 0);
 // Function to stop stream
 void stopStream(char x, int deskId);
 // Function to get buffer
