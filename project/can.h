@@ -2,6 +2,8 @@
 #define CAN_H_
 
 #include <stdint.h>
+#include "commands.h"
+#include "CircularBuffer.hpp"
 
 
 typedef unsigned char __u8;
@@ -40,6 +42,14 @@ struct can_frame {
     canid_t can_id;  /* 32 bit CAN_ID + EFF/RTR/ERR flags */
     __u8    can_dlc; /* frame payload length in byte (0 .. CAN_MAX_DLEN) */
     __u8    data[CAN_MAX_DLEN] __attribute__((aligned(8)));
+
 };
 
+uint32_t bytes_to_msg(uint8_t *b);
+uint32_t can_frame_to_msg(can_frame *frm);
+uint32_t error_flags_to_msg(uint8_t canintf, uint8_t eflg);
+void msg_to_bytes(uint32_t msg, uint8_t *bytes);
+void print_message(int number, int node, int id, int val);
+void print_can_errors(uint8_t canintf, uint8_t eflg);
+void read_interrupt(uint gpio, uint32_t events);
 #endif /* CAN_H_ */
