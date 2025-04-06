@@ -60,7 +60,7 @@ void setDutyCycle(int deskId, float val);
 void getDutyCycle(int deskId);
 void setIlluminanceRef(int deskId, float val);
 void getIlluminanceRef(int deskId);
-void measureIlluminance(int deskId);
+int measureIlluminance(int deskId);
 void measureLDRVoltage(int deskId);
 void getEnergy();
 void getVisibilityError();

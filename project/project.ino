@@ -4,66 +4,88 @@
 #include <map>
 #include "commands.h"
 #include "pico/multicore.h"
+#include <algorithm>  // For std::sort
 
-const float Vcc = 3.3;      // Supply voltage
-const int R = 10000;        // 10kΩ resistor
-const int R_0 = 1100000;    // LDR resistance at 1 LUX
-const float b = log10(R_0); 
-const float m = 0.8;        // Nominal value
-float reference = 30;
-float u_old;
+// Constants and Parameters
+#define MSG_HELLO 0x01
+#define MSG_CALIBRATE 0x02
 
-CircularBuffer<float, bufferSize> dutyCycleBuffer;
-CircularBuffer<float, bufferSize> illuminanceBuffer;
-int circular_buffer = 1;
-
-// PID Controller Initialization
-pid my_pid {0.01, 31.61, 1, 0.01 }; // K was previously 1
-
-// CAN-BUS communication innitialization
-MCP2515 can0 {spi0, 17, 19, 16, 18, 10000000}; // Initialize MCP2515
-pico_unique_board_id_t pico_board_id;
-struct can_frame canMsgTx, canMsgRx;
-uint8_t node_address = 0x01; // Unique ID for each luminaire
-int int_node_address = node_address;
-
-unsigned long previousTime = 0;  // Last time an operation was performed
-unsigned long sampInterval = 1000; // Sampling interval
-
+const float Vcc = 3.3;          // Supply voltage
+const int R = 10000;            // 10kΩ resistor
+const int R_0 = 1100000;        // LDR resistance at 1 LUX
+const float b = log10(R_0);     // Calibration constant
+const float m = 0.8;            // Nominal value for LUX calculation
+float reference = 30;           // Reference value for PID
+float u_old;                    // Old value for PID calculations
 std::map<int, Luminaire> luminaires;
 
-// Shared variables for multicore processing
-volatile float sharedIlluminance = 0.0;
-volatile int sharedPwmValue = 0;
-volatile bool newDataAvailable = false;
+
+// CAN-BUS Communication Setup
+MCP2515 can0 {spi0, 17, 19, 16, 18, 10000000}; // Initialize MCP2515 CAN controller
+struct can_frame canMsgTx, canMsgRx;           // CAN message structures
+uint8_t node_address;                          // Unique ID for each luminaire
+int int_node_address;                          // Integer version of node address
+int deskId = 0;                                // Desk ID for the system
+std::vector<int> node_ids;                     // List of node IDs (CAN IDs)
+int int_sender_id;                             // Sender's node ID from received message
+
+// PID Controller Setup
+pid my_pid {0.01, 31.61, 1, 0.01};            // PID controller parameters (K, Ti, Td, sampling period)
+
+// Buffers for Circular Data Storage
+CircularBuffer<float, bufferSize> dutyCycleBuffer;      // Circular buffer for duty cycle data
+CircularBuffer<float, bufferSize> illuminanceBuffer;    // Circular buffer for illuminance data
+int circular_buffer = 1;                            // Flag to indicate buffer state
+
+// Time Management
+unsigned long previousTime = 0;                // Last time an operation was performed
+unsigned long sampInterval = 1000;              // Sampling interval in milliseconds
+unsigned long lastMessageTime = 0;              // Time of last received CAN message
+const unsigned long timeout = 2000;             // Timeout for waiting for new CAN message (2 seconds)
+
+// Calibration and System Variables
+bool calibrationDone = false;
+bool calibrationStarted = false;                    // Flag to indicate if calibration is done
+uint8_t lowestNode = 255;                       // Placeholder for the lowest node ID (high initial value)
+int calibrationCount = 0;                       // Count for how many luminaires are calibrated
+int counter = 0;                                // General counter variable
+int num_iluminaires = 0;                        // Number of luminaires in the system
+int gains[100];                                 // Array to store gain values for luminaires
+
+// Shared Variables for Multicore Processing
+volatile float sharedIlluminance = 0.0;        // Shared illuminance value
+volatile int sharedPwmValue = 0;                // Shared PWM value
+volatile bool newDataAvailable = false;         // Flag indicating if new data is available
 
 // Interrupt flag for CAN communication
-volatile bool got_irq = false;
+volatile bool got_irq = false;                  // Flag to indicate if a CAN interrupt has occurred
 
-// Calibration Variables
-bool calibrationDone = false;
-uint8_t lowestNode = 255; // Initialize with a high value
+int addUniqueNodeId(int nodeId) {
+    // Check if this nodeId is already stored
+    for (int id : node_ids) {
+        if (id == nodeId) {
+            return 0;  // Node already in list
+        }
+    }
+    // Add the new nodeId
+    node_ids.push_back(nodeId);
+    num_iluminaires++;
+    return 1;  // New node added
+}
 
-int calibrationCount = 0;
-bool loop1_flag = false;
-int counter = 0;
-const int num_iluminaires = 2;
-uint8_t node_addresses[num_iluminaires] = {0x00, 0x01};
-int gains[num_iluminaires] = {0, 0}; 
-
-void performCalibration() {
+void performCalibration(int deskId) {
     delay(1500);
     Serial.println("Calibrating...");
-    float backgroundIlluminance = measureIlluminance();
+    float backgroundIlluminance = measureIlluminance(deskId);
     //Serial.printf("Background Illuminance (I_bg): %.2f lux\n", backgroundIlluminance);
     
     float dutyCycles[] = {0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1};
     float illuminanceValues[11];
 
     for (int i = 0; i < 11; i++) {
-        setDutyCycle(dutyCycles[i]);
+        setDutyCycle(deskId, dutyCycles[i]);
         delay(500);
-        illuminanceValues[i] = measureIlluminance();
+        illuminanceValues[i] = measureIlluminance(deskId);
         //Serial.printf("Duty Cycle: %.2f, Measured Illuminance: %.2f lux\n", dutyCycles[i], illuminanceValues[i]);
     }
     
@@ -88,22 +110,47 @@ void setup() {
     analogWriteFreq(30000); // 30KHz PWM Frequency
     analogWriteRange(4095); // Max PWM value
 
+    pico_unique_board_id_t pico_board_id;
+    pico_get_unique_board_id(&pico_board_id);
+    int_node_address = (pico_board_id.id[5] << 8) | pico_board_id.id[6]; // Get the unique ID from the board (only 5th and 6th bytes are different)
+    addUniqueNodeId(int_node_address);
+
     can0.reset();
     can0.setBitrate(CAN_1000KBPS);
     can0.setNormalMode();
+
+    // Initialize the luminaires, just one for now
+    initializeLuminaires(1);
+ 
+    delay(10000);
+
+    // Send a hello message to the CAN bus
+    canMsgTx.can_id = int_node_address;
+    canMsgTx.can_dlc = 1;
+    canMsgTx.data[0] = MSG_HELLO; // 'HELLO' or boot message
+    can0.sendMessage(&canMsgTx);
+    Serial.println("Setup complete");
+    Serial.print("Node Address: ");
+    Serial.println(int_node_address);
 
     // Set up CAN interrupt
     //const uint8_t interruptPin = 20;  // Define the interrupt pin
     //gpio_set_irq_enabled_with_callback(interruptPin, GPIO_IRQ_EDGE_FALL, true, &read_interrupt);
 
-    // Initialize the luminaires, just one for now
-    initializeLuminaires(1);
-    delay(10000);
-    Serial.println("Setup complete");
+    /*
+    Serial.print("---");
+    for (int i = 0; i < 8; i++) {
+    if (node_address[i] < 0x10) Serial.print("0"); // Leading zero for single digit
+    Serial.print(node_address[i], HEX);
+    if (i < 7) Serial.print(":");
+    }
+    Serial.println();
+    */
 }
 
 void loop() {
     unsigned long currentTime = micros();  // Current time in microseconds
+    int flag;
 
     // Handle serial commands
     if (Serial.available()) {
@@ -112,50 +159,65 @@ void loop() {
         handleCommand(command);
     }
 
-    if (!calibrationDone && int_node_address == 0) {
-      performCalibration();
-      calibrationDone = true;
-      canMsgTx.can_id = node_address;
-      canMsgTx.can_dlc = 1;
-      canMsgTx.data[0] = 0xFF;  // Signal calibration done
-      can0.sendMessage(&canMsgTx);
-      delay(1500);
-      setDutyCycle(0); 
-      calibrationCount++;
-    }
-
     // CAN message receiving
     while (can0.readMessage(&canMsgRx) == MCP2515::ERROR_OK) {
-        uint8_t sender_id = canMsgRx.can_id;
-        int int_sender_id = sender_id;
+        lastMessageTime = currentTime;
+        int int_sender_id = canMsgRx.can_id;
         uint8_t received_data = canMsgRx.data[0];
         Serial.print("Message:");
         Serial.println(received_data);
-        //Serial.println(int_node_address);
 
-        if(received_data == 0xFF) {
-            gains[int_sender_id] = measureIlluminance();
-            calibrationCount++;
-            Serial.print("Measured Gain:");
-            Serial.println(gains[int_sender_id]);
+        if(!calibrationDone){ //If calibration has not completed
+            
+            if(addUniqueNodeId(int_sender_id)){//If a message is received from a new node, add it to the list and skip loop iteration
+                continue; //skip rest of loop
+            }
+            
+            if(received_data == MSG_CALIBRATE) {
+                gains[int_sender_id] = measureIlluminance(deskId); //measure the gain relative to the one that sent me the message
+                calibrationCount++;
+                Serial.print("Measured Gain:");
+                Serial.println(gains[int_sender_id]);
+
+                if(int_node_address == node_ids[calibrationCount]){// If my id is the lowest uncalibrated one, start my calibration
+                    performCalibration(deskId);
+                    canMsgTx.can_id = int_node_address;
+                    canMsgTx.can_dlc = 1;
+                    canMsgTx.data[0] = MSG_CALIBRATE;  // Signal calibration done
+                    can0.sendMessage(&canMsgTx);
+                    delay(1500);
+                    setDutyCycle(deskId,0); 
+                    calibrationCount++;
+                }
+                if (calibrationCount >= num_iluminaires) { //if all luminaires have been calibrated
+                    calibrationDone = true;
+                    Serial.println("All luminaires calibrated");
+                    
+                }
+            }
         }
-        if (!calibrationDone && received_data == 0xFF && int_sender_id == int_node_address - 1) {
-                performCalibration();
-                calibrationDone = true;
-                canMsgTx.can_id = node_address;
+        
+    }
+
+    // If calibration has not started and 2 seconds have passed without receiving a message and i have the lowest uncalibrated id, calibrate and send MSG_CALIBRATE
+    if(!calibrationStarted){
+        if (currentTime - lastMessageTime >= timeout) {
+            std::sort(node_ids.begin(), node_ids.end()); // Sort the ids
+            num_iluminaires = node_ids.size();
+            if(int_node_address == node_ids[calibrationCount]){// If my id is the lowest uncalibrated one
+                performCalibration(deskId);
+                canMsgTx.can_id = int_node_address;
                 canMsgTx.can_dlc = 1;
-                canMsgTx.data[0] = 0xFF;  // Signal calibration done
+                canMsgTx.data[0] = MSG_CALIBRATE;  // Signal calibration done
                 can0.sendMessage(&canMsgTx);
                 delay(1500);
-                setDutyCycle(0); 
+                setDutyCycle(deskId,0); 
                 calibrationCount++;
-        }
-        if (calibrationCount >= num_iluminaires) {
-            loop1_flag = true;
-            Serial.println("All luminaires calibrated");
-            
+                calibrationStarted = true;
+            }
         }
     }
+
     /*
     // Print buffer data periodically
     if (circular_buffer == 1 && dutyCycleBuffer.isFull()) {
@@ -178,7 +240,7 @@ void loop1() {
     uint32_t msg;
     uint8_t b[4];
 
-    while (loop1_flag) {
+    while (calibrationDone) {
         unsigned long currentTime = micros();  // Current time in microseconds
 
         // Check if the required interval has passed
