@@ -174,8 +174,10 @@ void loop() {
             }
             
             if(received_data == MSG_CALIBRATE) {
+                //!!! nao poderemos utilizar "int_sender_id" como index
                 gains[int_sender_id] = measureIlluminance(deskId); //measure the gain relative to the one that sent me the message
                 calibrationCount++;
+                ///!!! 
                 Serial.print("Measured Gain:");
                 Serial.println(gains[int_sender_id]);
 
