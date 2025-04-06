@@ -6,28 +6,28 @@
 
 ***LUX measurement:***
 
-- [ ] Implement a function that when invoked returns the
+- [x] Implement a function that when invoked returns the
 illuminance measured in LUX.
 
 ***LED driver:***
 
-- [ ] Implement a function that, when invoked, sets the power of
+- [x] Implement a function that, when invoked, sets the power of
 the led to some required value.
 
 ***System Identificationn:***
 
-- [ ] Implement a function that computes the static gains of the
+- [x] Implement a function that computes the static gains of the
 system at initialisation.
 
 ***Luminaire PID controller:***
 
-- [ ] Implement a C++ class with functions to perform
+- [x] Implement a C++ class with functions to perform
 feedback/feedforward control of a luminaire that can set its illuminance to a desired
 value.
 
 ***Can-Bus communication protocol:***
 
-- [ ] Implement a network protocol where one node can send
+- [x] Implement a network protocol where one node can send
 messages to any other node and broadcast messages to all nodes. Characterise the
 communication delays involved in your implementation.
 
@@ -41,11 +41,11 @@ from executing.
 
 ***Network Initialisation:***
 
-- [ ] Implement a boot procedure in which the different nodes
+- [x] Implement a boot procedure in which the different nodes
 recognise each other, calibrate the system gains, and synchronise to start operating
 the distributed control system.
 
-***Distributed ControlDistributed Control:***
+***Distributed Control:***
 
 - [ ] Implement and present results of at least one of the distributed
 solutions to the project presented in the course that require communication between
