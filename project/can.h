@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "commands.h"
 #include "CircularBuffer.hpp"
+#include "mcp2515.h"
 
 
 typedef unsigned char __u8;

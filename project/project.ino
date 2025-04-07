@@ -81,7 +81,7 @@ float performCalibration(int deskId) {
     float backgroundIlluminance = measureIlluminance();
     //Serial.printf("Background Illuminance (I_bg): %.2f lux\n", backgroundIlluminance);
     
-    float dutyCycles[] = {0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1};
+    int dutyCycles[] = {0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100};
     float illuminanceValues[11];
 
     for (int i = 0; i < 11; i++) {
@@ -116,7 +116,7 @@ void setup() {
 
     pico_unique_board_id_t pico_board_id;
     pico_get_unique_board_id(&pico_board_id);
-    int_node_address = (pico_board_id.id[5] << 8) | pico_board_id.id[6]; // Get the unique ID from the board (only 5th and 6th bytes are different)
+    int_node_address = pico_board_id.id[5] ;// Get the unique ID from the board (only 5th and 6th bytes are different)
     addUniqueNodeId(int_node_address);
 
     can0.reset();
@@ -211,22 +211,21 @@ void loop() {
 
             byte cmdCode = getCommandCode(letters);
 
-            for(i = 0; i < varCount; i++){
-                uint8_t lowByte = var[i] & 0xFF;           // Extract lower 8 bits
-                uint8_t highByte = (var[i] >> 8) & 0xFF;   // Extract higher 8 bits
-                
-                canMsgTx.data[i+2] = lowByte; // Store lower byte in data[2]
-                canMsgTx.data[i+3] = highByte; // Store higher byte in data[3]
-                j = i+3;
-            }
-                    
+            int j = 2;  // Start writing at data[2]
+            for (i = 0; i < varCount; i++) {
+                uint8_t lowByte = var[i] & 0xFF;
+                uint8_t highByte = (var[i] >> 8) & 0xFF;
+
+                canMsgTx.data[j++] = lowByte;
+                canMsgTx.data[j++] = highByte;
+            }  
             
             canMsgTx.can_id = int_node_address;
             canMsgTx.can_dlc = j;
             canMsgTx.data[0] = MSG_COMMAND;  // Signal calibration done
             canMsgTx.data[1] = cmdCode;
             can0.sendMessage(&canMsgTx);
-            handleCommand(canMsgTx, node_ids.data(), int_node_address);
+            handleCommand(canMsgTx, node_ids.data(), int_node_address, can0);
         }
     }
 
@@ -236,7 +235,9 @@ void loop() {
         int int_sender_id = canMsgRx.can_id;
         uint8_t received_data = canMsgRx.data[0];
         Serial.print("Message:");
-        Serial.println(received_data);
+        Serial.print(received_data);
+        Serial.print(" from node: ");
+        Serial.println(int_sender_id);
 
         if(!calibrationDone){ //If calibration has not completed
             
@@ -274,7 +275,10 @@ void loop() {
         }
 
         if(received_data == MSG_COMMAND){
-            handleCommand(canMsgRx, node_ids.data(), int_node_address);
+            handleCommand(canMsgRx, node_ids.data(), int_node_address, can0);
+        }
+        if(received_data == MSG_COMMAND_GET){
+            handleCommandGet(canMsgRx);
         }
         
     }
@@ -285,7 +289,7 @@ void loop() {
             std::sort(node_ids.begin(), node_ids.end()); // Sort the ids
             num_iluminaires = node_ids.size();
             if(int_node_address == node_ids[0]){// If my id is the lowest uncalibrated one
-                gains[calibrationCount] = performCalibration(deskId);
+                gains[calibrationCount] = performCalibration(calibrationCount);
                 canMsgTx.can_id = int_node_address;
                 canMsgTx.can_dlc = 1;
                 canMsgTx.data[0] = MSG_CALIBRATE;  // Signal calibration done

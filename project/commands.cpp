@@ -1,13 +1,11 @@
 #include "commands.h"
 #include "pid.h"
-#include "can.h"
 
 // Assuming streamData is defined somewhere globally
 StreamData streamData[MAX_DESKS];  // Define MAX_DESKS based on your configuration
 
 extern float reference; // Reference value for PID
-
-
+extern bool hub_node; // Flag to indicate if this is the hub node
 
 byte getCommandCode(String cmd) {
     if (cmd == "u") return COMMAND_u;
@@ -42,9 +40,76 @@ byte getCommandCode(String cmd) {
 // frame.data[0] = lowByte;
 // frame.data[1] = highByte;
 
+void handleCommandGet(struct can_frame command) {
+    char cmd;
+    float val;
+    char x;            // Declare variable for 'x'
+    int deskId;        // Declare variable for 'deskId'
+    unsigned long time = millis(); // Default to current time
+
+    int16_t firstValue = command.data[2] | (command.data[3] << 8); //usually the luminaire number 0 to num_luminaieres-1
+    int16_t secondValue = command.data[4] | (command.data[5] << 8);
+
+    switch (command.data[1]) {
+        case COMMAND_gu:
+            Serial.print("u");
+            Serial.print(" ");
+            Serial.print(firstValue);
+            Serial.print(" ");
+            Serial.println(secondValue);
+            break;
+        
+        case COMMAND_gr:
+            break;
+        
+        case COMMAND_gy:
+            break;
+    
+        case COMMAND_gv:
+            break;
+    
+        case COMMAND_go:
+            break;
+    
+        case COMMAND_gf:
+            break;
+    
+        case COMMAND_gd:
+            break;
+    
+        case COMMAND_gp:
+            break;
+        
+        case COMMAND_gt:
+            break;
+        
+        case COMMAND_s:
+            break;
+    
+        case COMMAND_S:
+            break;
+    
+        case COMMAND_gb:
+            break;
+    
+        case COMMAND_gE:
+            break;
+        
+        case COMMAND_gV:
+            break;
+        
+        case COMMAND_gF:
+            break;
+
+        default:
+            Serial.println("Unknown command");
+            break;
+    }
+}
 
 
-void handleCommand(struct can_frame command, int* node_ids, int int_node_address) {
+
+void handleCommand(struct can_frame command, int* node_ids, int int_node_address, MCP2515& can0) {
     char cmd;
     float val;
     char x;            // Declare variable for 'x'
@@ -56,16 +121,17 @@ void handleCommand(struct can_frame command, int* node_ids, int int_node_address
 
     switch (command.data[1]) {
         case COMMAND_u:
-            Serial.print("-u-");
+            Serial.print("-u ");
             Serial.print(firstValue);
-            Serial.print("-");
-            Serial.println(secondValue);
+            Serial.print(" ");
+            Serial.print(secondValue);
+            Serial.println("-");
             setDutyCycle(firstValue, secondValue, node_ids, int_node_address);
             break;
     
         case COMMAND_gu:
             Serial.println("-gu-");
-            getDutyCycle(firstValue, node_ids, int_node_address); 
+            getDutyCycle(firstValue, node_ids, int_node_address, can0); 
             break;
         
         case COMMAND_r:
@@ -261,9 +327,14 @@ void getBuffer(char x, int deskId, int* node_ids, int int_node_address) {
 
 // Function to set Duty Cycle
 void setDutyCycle(int deskId, int val, int* node_ids, int int_node_address) {
+    //Serial.print("node_ids[deskId] = ");
+    //Serial.println(node_ids[deskId]);
+    //Serial.print("int_node_address = ");
+    //Serial.println(int_node_address);
     if(node_ids[deskId] == int_node_address) {//if it is requesting my info.
-        int pwm_value = (int)(val*40); // val is in [0, 100] and pwm_value is in [0, 4095]
+        int pwm_value = (int) (val*40.95); // val is in [0, 100] and pwm_value is in [0, 4095]
         pwm_value = constrain(pwm_value, 0, 4095);
+        //Serial.println(pwm_value);
         analogWrite(LED_PWM_PIN, pwm_value);
         dutyCycleBuffer.push(val);
         //Serial.println("ack");
@@ -271,11 +342,34 @@ void setDutyCycle(int deskId, int val, int* node_ids, int int_node_address) {
 }
 
 // Function to get Duty Cycle
-void getDutyCycle(int deskId, int* node_ids, int int_node_address) { //change to accomodate
-    
-    if(node_ids[deskId] == int_node_address) {//if it is requesting my info.
+void getDutyCycle(int deskId, int* node_ids, int int_node_address, MCP2515& can0) { //change to accomodate
+
+    struct can_frame canMsgTx;
+
+    if(deskId != 0){//im not the hub soo i need to send the message for him to Serial.print()
         if (!dutyCycleBuffer.isEmpty()) {
-            Serial.printf("u %.2f\n", dutyCycleBuffer.last());
+            int value = dutyCycleBuffer.last();
+            
+            uint8_t lowByte1 = deskId & 0xFF;
+            uint8_t highByte1 = (deskId >> 8) & 0xFF;
+            uint8_t lowByte = value & 0xFF;
+            uint8_t highByte = (value >> 8) & 0xFF;
+
+            canMsgTx.can_id = int_node_address;
+            canMsgTx.can_dlc = 6;
+            canMsgTx.data[0] = MSG_COMMAND_GET;
+            canMsgTx.data[1] = COMMAND_gu;
+            canMsgTx.data[2] = lowByte1;
+            canMsgTx.data[3] = highByte1;
+            canMsgTx.data[4] = lowByte;
+            canMsgTx.data[5] = highByte;
+            can0.sendMessage(&canMsgTx);
+        }
+    }
+    
+    if(node_ids[deskId] == int_node_address) {//if it is simply requesting my info.
+        if (!dutyCycleBuffer.isEmpty()) {
+            Serial.printf("u %d %.2f\n", deskId, dutyCycleBuffer.last());
         } else {
             Serial.println("err");
         }

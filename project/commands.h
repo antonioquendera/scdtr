@@ -6,6 +6,11 @@
 #include "CircularBuffer.hpp"
 #include <map>
 #include <ctime>
+#include "mcp2515.h"  // Include your CAN library
+#include "can.h"
+
+#define MSG_COMMAND_GET 0x04
+class MCP2515;
 
 #define COMMAND_u 0x01
 #define COMMAND_gu 0x02
@@ -88,9 +93,10 @@ extern CircularBuffer<float, bufferSize> illuminanceBuffer;
 byte getCommandCode(String cmd);
 
 // Function declarations
-void handleCommand(struct can_frame command, int* node_ids, int int_node_address);
+void handleCommandGet(struct can_frame command);
+void handleCommand(struct can_frame command, int* node_ids, int int_node_address, MCP2515& can0);
 void setDutyCycle(int deskId, int val , int* node_ids, int int_node_address);
-void getDutyCycle(int deskId , int* node_ids, int int_node_address);
+void getDutyCycle(int deskId , int* node_ids, int int_node_address, MCP2515& can0);
 void setIlluminanceRef(int deskId, int val , int* node_ids, int int_node_address);
 void getIlluminanceRef(int deskId, int* node_ids, int int_node_address);
 void measureIlluminanceCommand(int deskId, int* node_ids, int int_node_address);
