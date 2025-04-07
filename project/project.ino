@@ -247,9 +247,11 @@ void loop() {
             if(received_data == MSG_CALIBRATE) {
                 Serial.println("Calibration message received");
                 calibrationStarted = true;
+                std::sort(node_ids.begin(), node_ids.end()); // Sort the ids
+                num_iluminaires = node_ids.size();
                 gains[calibrationCount] = measureIlluminance(); //measure the gain relative to the one that sent me the message
                 Serial.print("Measured Gain:");
-                Serial.println(gains[int_sender_id]);
+                Serial.println(gains[calibrationCount]);
                 calibrationCount++;
 
                 if(int_node_address == node_ids[calibrationCount]){// If my id is the lowest uncalibrated one, start my calibration
@@ -260,7 +262,7 @@ void loop() {
                     canMsgTx.data[0] = MSG_CALIBRATE;  // Signal calibration done
                     can0.sendMessage(&canMsgTx);
                     delay(1500);
-                    setDutyCycle(deskId,0, node_ids.data(), node_ids[deskId]);
+                    setDutyCycle(calibrationCount, 0, node_ids.data(), node_ids[calibrationCount]);
                     calibrationCount++;
                 }
                 if (calibrationCount >= num_iluminaires) { //if all luminaires have been calibrated
@@ -272,7 +274,7 @@ void loop() {
         }
 
         if(received_data == MSG_COMMAND){
-            handleCommand(canMsgRx,node_ids.data(),int_node_address);
+            handleCommand(canMsgRx, node_ids.data(), int_node_address);
         }
         
     }
@@ -289,7 +291,7 @@ void loop() {
                 canMsgTx.data[0] = MSG_CALIBRATE;  // Signal calibration done
                 can0.sendMessage(&canMsgTx);
                 delay(1500);
-                setDutyCycle(deskId, 0, node_ids.data(), node_ids[deskId]);
+                setDutyCycle(calibrationCount, 0, node_ids.data(), node_ids[calibrationCount]);
                 calibrationCount++;
                 calibrationStarted = true;
                 hub_node = true;
@@ -319,7 +321,8 @@ void loop1() {
     uint32_t msg;
     uint8_t b[4];
 
-    while (calibrationDone) {
+    //while (calibrationDone) {
+    while (false) { //JUST FOR TESTING COMMANDS
         unsigned long currentTime = micros();  // Current time in microseconds
 
         // Check if the required interval has passed

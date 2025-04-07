@@ -5,6 +5,8 @@
 // Assuming streamData is defined somewhere globally
 StreamData streamData[MAX_DESKS];  // Define MAX_DESKS based on your configuration
 
+extern float reference; // Reference value for PID
+
 
 
 byte getCommandCode(String cmd) {
@@ -49,12 +51,15 @@ void handleCommand(struct can_frame command, int* node_ids, int int_node_address
     int deskId;        // Declare variable for 'deskId'
     unsigned long time = millis(); // Default to current time
 
-    int16_t firstValue = command.data[2] | (command.data[3] << 8);
+    int16_t firstValue = command.data[2] | (command.data[3] << 8); //usually the luminaire number 0 to num_luminaieres-1
     int16_t secondValue = command.data[4] | (command.data[5] << 8);
 
     switch (command.data[1]) {
         case COMMAND_u:
-            Serial.println("-u-");
+            Serial.print("-u-");
+            Serial.print(firstValue);
+            Serial.print("-");
+            Serial.println(secondValue);
             setDutyCycle(firstValue, secondValue, node_ids, int_node_address);
             break;
     
@@ -158,168 +163,7 @@ void handleCommand(struct can_frame command, int* node_ids, int int_node_address
             break;
     }
 }
-    // else if (sscanf(command.c_str(), "%c %c %d", &cmd, &x, &deskId) >= 1) {
-    //     switch (cmd) {
-    //         case 's': {
-    //             // Start streaming for a specific variable and desk
-    //             if (sscanf(command.c_str(), "s %c %d %f %lu", &x, &deskId, &val, &time) == 4) {
-    //                 startStream(x, deskId, val, time);
-    //             } else {
-    //                 startStream(x, deskId, val, time);  // Default time is '0' when not provided
-    //             }
-    //             break;
-    //         }
-    //         case 'S': {
-    //             // Stop streaming for a specific variable and desk
-    //             stopStream(x, deskId);
-    //             break;
-    //         }
-    //         case 'g': {
-    //             // Get buffer for the variable of a specific desk
-    //             if (command.startsWith("g b")) {
-    //                 getBuffer(x, deskId);
-    //             }
-    //             break;
-    //         }
-    //         default: Serial.println("err"); break;
-    //     }
-    // }
-    // else if (sscanf(command.c_str(), "%c %d %f", &cmd, &deskId, &val) >= 1) {
-    //     switch (cmd) {
-    //         case 'u': {
-    //             // Set duty cycle for luminaire i
-    //             setDutyCycle(deskId,val);
-    //             break;
-    //         }
-    //         case 'r': {
-    //             // Set illuminance reference for luminaire i
-    //             setIlluminanceRef(deskId,val);
-    //             break;
-    //         }
-    //         case 'o': {
-    //             // Set occupancy state for desk i
-    //             luminaires[deskId].occupied = (val != 0);
-    //             Serial.println("ack");
-    //             break;
-    //         }
-    //         case 'a': {
-    //             // Set anti-windup state for desk i
-    //             luminaires[deskId].anti_windup = (val != 0);
-    //             Serial.println("ack");
-    //             break;
-    //         }
-    //         case 'f': {
-    //             // Set feedback control state for desk i
-    //             luminaires[deskId].feedback_control = (val != 0);
-    //             Serial.println("ack");
-    //             break;
-    //         }
-    //         default: Serial.println("err"); break;
-    //     }
-    // }
-    // else if (sscanf(command.c_str(), "%c %d", &cmd, &deskId) >= 1) {
-    //     switch (cmd) 
-    //     {
-    //         case 'g': {
-    //             } else if (command.startsWith("g d")) {
-    //                 // Get current external illuminance of desk i
-    //                 Serial.printf("d %d %.2f\n", deskId, luminaires[deskId].external_illuminance);
-    //             } else if (command.startsWith("g p")) {
-    //                 // Get instantaneous power consumption of desk i
-    //                 Serial.printf("p %d %.2f\n", deskId, luminaires[deskId].power_consumption);
-    //             } else if (command.startsWith("g t")) {
-    //                 // Get the elapsed time since the last restart for desk i
-    //                 Serial.printf("t %d %lu\n", deskId, luminaires[deskId].elapsed_time);
-    //             } else if (command.startsWith("g a")) {
-    //                 // Get anti-windup state for desk i
-    //                 Serial.printf("a %d %d\n", deskId, luminaires[deskId].anti_windup ? 1 : 0);
-    //             } else if (command.startsWith("g f")) {
-    //                 // Get feedback control state for desk i
-    //                 Serial.printf("f %d %d\n", deskId, luminaires[deskId].feedback_control ? 1 : 0);
-    //             } else if (command.startsWith("g b")) {
-    //                 // Get the last minute buffer of the variable <x> of the desk <i>
-    //                 std::vector<float>& buffer = (x == 'y') ? luminaires[deskId].buffer_y : luminaires[deskId].buffer_u;
-
-    //                 String data = "";
-    //                 for (int i = 0; i < buffer.size(); i++) {
-    //                     data += String(buffer[i]);
-    //                     if (i < buffer.size() - 1) {
-    //                         data += ",";
-    //                     }
-    //                 }
-
-    //                 // Send buffer data
-    //                 Serial.printf("b %c %d %s\n", x, deskId, data.c_str());
-    //             } else if (command.startsWith("g E")) {
-    //                 // Get average energy consumption at desk i
-    //                 float energy = calculateEnergy();
-    //                 Serial.printf("E %d %.2f\n", deskId, energy);
-    //             } else if (command.startsWith("g V")) {
-    //                 // Get average visibility error at desk i
-    //                 float visibilityError = calculateVisibilityError(reference);
-    //                 Serial.printf("V %d %.2f\n", deskId, visibilityError);
-    //             } else if (command.startsWith("g F")) {
-    //                 // Get average flicker error at desk i
-    //                 float flicker = calculateFlicker();
-    //                 Serial.printf("F %d %.2f\n", deskId, flicker); break;
-    //             } else if (command.startsWith("g O")) {
-    //                 // Get lower bound on illuminance for the occupied state
-    //                 Serial.printf("O %d %.2f\n", deskId, luminaires[deskId].occupied_lower_bound);
-    //             } else if (command.startsWith("g U")) {
-    //                 // Get lower bound on illuminance for the unoccupied state
-    //                 Serial.printf("U %d %.2f\n", deskId, luminaires[deskId].unoccupied_lower_bound);
-    //             } else if (command.startsWith("g L")) {
-    //                 // Get the current illuminance lower bound
-    //                 Serial.printf("L %d %.2f\n", deskId, luminaires[deskId].current_lower_bound);
-    //             } else if (command.startsWith("g C")) {
-    //                 // Get the current energy cost
-    //                 Serial.printf("C %d %.2f\n", deskId, luminaires[deskId].energy_cost);
-    //             }
-    //             break;
-    //             }
-    //         case 'O': {
-    //             // Set lower bound on illuminance for the occupied state
-    //             if (sscanf(command.c_str(), "O %d %f", &deskId, &val) == 2) {
-    //                 luminaires[deskId].occupied_lower_bound = val;
-    //                 Serial.println("ack");
-    //             } else {
-    //                 Serial.println("err");
-    //             }
-    //             break;
-    //         }
-    //         case 'U': {
-    //             // Set lower bound on illuminance for the unoccupied state
-    //             if (sscanf(command.c_str(), "U %d %f", &deskId, &val) == 2) {
-    //                 luminaires[deskId].unoccupied_lower_bound = val;
-    //                 Serial.println("ack");
-    //             } else {
-    //                 Serial.println("err");
-    //             }
-    //             break;
-    //         }
-    //         case 'C': {
-    //             // Set the current energy cost
-    //             if (sscanf(command.c_str(), "C %d %f", &deskId, &val) == 2) {
-    //                 luminaires[deskId].energy_cost = val;
-    //                 Serial.println("ack");
-    //             } else {
-    //                 Serial.println("err");
-    //             }
-    //             break;
-    //         }
-    //         case 'R': {
-    //             // Restart the system
-    //             initializeLuminaires(MAX_DESKS);
-    //             Serial.println("ack");
-    //             break;
-    //         }
-    //             default: {
-    //                 Serial.println("err");
-    //                 break;
-    //             }
-    //         }
-    //     }
-    // }
+    
 
 // Function to start stream
 void startStream(char x, int deskId, int* node_ids, int int_node_address) {
@@ -418,7 +262,7 @@ void getBuffer(char x, int deskId, int* node_ids, int int_node_address) {
 // Function to set Duty Cycle
 void setDutyCycle(int deskId, int val, int* node_ids, int int_node_address) {
     if(node_ids[deskId] == int_node_address) {//if it is requesting my info.
-        int pwm_value = (int)(val * 4095);
+        int pwm_value = (int)(val*40); // val is in [0, 100] and pwm_value is in [0, 4095]
         pwm_value = constrain(pwm_value, 0, 4095);
         analogWrite(LED_PWM_PIN, pwm_value);
         dutyCycleBuffer.push(val);
@@ -601,4 +445,166 @@ void initializeLuminaires(int numLuminaires) {
     }
 }
 
+// else if (sscanf(command.c_str(), "%c %c %d", &cmd, &x, &deskId) >= 1) {
+    //     switch (cmd) {
+    //         case 's': {
+    //             // Start streaming for a specific variable and desk
+    //             if (sscanf(command.c_str(), "s %c %d %f %lu", &x, &deskId, &val, &time) == 4) {
+    //                 startStream(x, deskId, val, time);
+    //             } else {
+    //                 startStream(x, deskId, val, time);  // Default time is '0' when not provided
+    //             }
+    //             break;
+    //         }
+    //         case 'S': {
+    //             // Stop streaming for a specific variable and desk
+    //             stopStream(x, deskId);
+    //             break;
+    //         }
+    //         case 'g': {
+    //             // Get buffer for the variable of a specific desk
+    //             if (command.startsWith("g b")) {
+    //                 getBuffer(x, deskId);
+    //             }
+    //             break;
+    //         }
+    //         default: Serial.println("err"); break;
+    //     }
+    // }
+    // else if (sscanf(command.c_str(), "%c %d %f", &cmd, &deskId, &val) >= 1) {
+    //     switch (cmd) {
+    //         case 'u': {
+    //             // Set duty cycle for luminaire i
+    //             setDutyCycle(deskId,val);
+    //             break;
+    //         }
+    //         case 'r': {
+    //             // Set illuminance reference for luminaire i
+    //             setIlluminanceRef(deskId,val);
+    //             break;
+    //         }
+    //         case 'o': {
+    //             // Set occupancy state for desk i
+    //             luminaires[deskId].occupied = (val != 0);
+    //             Serial.println("ack");
+    //             break;
+    //         }
+    //         case 'a': {
+    //             // Set anti-windup state for desk i
+    //             luminaires[deskId].anti_windup = (val != 0);
+    //             Serial.println("ack");
+    //             break;
+    //         }
+    //         case 'f': {
+    //             // Set feedback control state for desk i
+    //             luminaires[deskId].feedback_control = (val != 0);
+    //             Serial.println("ack");
+    //             break;
+    //         }
+    //         default: Serial.println("err"); break;
+    //     }
+    // }
+    // else if (sscanf(command.c_str(), "%c %d", &cmd, &deskId) >= 1) {
+    //     switch (cmd) 
+    //     {
+    //         case 'g': {
+    //             } else if (command.startsWith("g d")) {
+    //                 // Get current external illuminance of desk i
+    //                 Serial.printf("d %d %.2f\n", deskId, luminaires[deskId].external_illuminance);
+    //             } else if (command.startsWith("g p")) {
+    //                 // Get instantaneous power consumption of desk i
+    //                 Serial.printf("p %d %.2f\n", deskId, luminaires[deskId].power_consumption);
+    //             } else if (command.startsWith("g t")) {
+    //                 // Get the elapsed time since the last restart for desk i
+    //                 Serial.printf("t %d %lu\n", deskId, luminaires[deskId].elapsed_time);
+    //             } else if (command.startsWith("g a")) {
+    //                 // Get anti-windup state for desk i
+    //                 Serial.printf("a %d %d\n", deskId, luminaires[deskId].anti_windup ? 1 : 0);
+    //             } else if (command.startsWith("g f")) {
+    //                 // Get feedback control state for desk i
+    //                 Serial.printf("f %d %d\n", deskId, luminaires[deskId].feedback_control ? 1 : 0);
+    //             } else if (command.startsWith("g b")) {
+    //                 // Get the last minute buffer of the variable <x> of the desk <i>
+    //                 std::vector<float>& buffer = (x == 'y') ? luminaires[deskId].buffer_y : luminaires[deskId].buffer_u;
+
+    //                 String data = "";
+    //                 for (int i = 0; i < buffer.size(); i++) {
+    //                     data += String(buffer[i]);
+    //                     if (i < buffer.size() - 1) {
+    //                         data += ",";
+    //                     }
+    //                 }
+
+    //                 // Send buffer data
+    //                 Serial.printf("b %c %d %s\n", x, deskId, data.c_str());
+    //             } else if (command.startsWith("g E")) {
+    //                 // Get average energy consumption at desk i
+    //                 float energy = calculateEnergy();
+    //                 Serial.printf("E %d %.2f\n", deskId, energy);
+    //             } else if (command.startsWith("g V")) {
+    //                 // Get average visibility error at desk i
+    //                 float visibilityError = calculateVisibilityError(reference);
+    //                 Serial.printf("V %d %.2f\n", deskId, visibilityError);
+    //             } else if (command.startsWith("g F")) {
+    //                 // Get average flicker error at desk i
+    //                 float flicker = calculateFlicker();
+    //                 Serial.printf("F %d %.2f\n", deskId, flicker); break;
+    //             } else if (command.startsWith("g O")) {
+    //                 // Get lower bound on illuminance for the occupied state
+    //                 Serial.printf("O %d %.2f\n", deskId, luminaires[deskId].occupied_lower_bound);
+    //             } else if (command.startsWith("g U")) {
+    //                 // Get lower bound on illuminance for the unoccupied state
+    //                 Serial.printf("U %d %.2f\n", deskId, luminaires[deskId].unoccupied_lower_bound);
+    //             } else if (command.startsWith("g L")) {
+    //                 // Get the current illuminance lower bound
+    //                 Serial.printf("L %d %.2f\n", deskId, luminaires[deskId].current_lower_bound);
+    //             } else if (command.startsWith("g C")) {
+    //                 // Get the current energy cost
+    //                 Serial.printf("C %d %.2f\n", deskId, luminaires[deskId].energy_cost);
+    //             }
+    //             break;
+    //             }
+    //         case 'O': {
+    //             // Set lower bound on illuminance for the occupied state
+    //             if (sscanf(command.c_str(), "O %d %f", &deskId, &val) == 2) {
+    //                 luminaires[deskId].occupied_lower_bound = val;
+    //                 Serial.println("ack");
+    //             } else {
+    //                 Serial.println("err");
+    //             }
+    //             break;
+    //         }
+    //         case 'U': {
+    //             // Set lower bound on illuminance for the unoccupied state
+    //             if (sscanf(command.c_str(), "U %d %f", &deskId, &val) == 2) {
+    //                 luminaires[deskId].unoccupied_lower_bound = val;
+    //                 Serial.println("ack");
+    //             } else {
+    //                 Serial.println("err");
+    //             }
+    //             break;
+    //         }
+    //         case 'C': {
+    //             // Set the current energy cost
+    //             if (sscanf(command.c_str(), "C %d %f", &deskId, &val) == 2) {
+    //                 luminaires[deskId].energy_cost = val;
+    //                 Serial.println("ack");
+    //             } else {
+    //                 Serial.println("err");
+    //             }
+    //             break;
+    //         }
+    //         case 'R': {
+    //             // Restart the system
+    //             initializeLuminaires(MAX_DESKS);
+    //             Serial.println("ack");
+    //             break;
+    //         }
+    //             default: {
+    //                 Serial.println("err");
+    //                 break;
+    //             }
+    //         }
+    //     }
+    // }
 
