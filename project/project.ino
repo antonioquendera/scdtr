@@ -9,6 +9,7 @@
 // Constants and Parameters
 #define MSG_HELLO 0x01
 #define MSG_CALIBRATE 0x02
+#define MSG_COMMAND 0x03
 
 const float Vcc = 3.3;          // Supply voltage
 const int R = 10000;            // 10kΩ resistor
@@ -51,6 +52,7 @@ int calibrationCount = 0;                       // Count for how many luminaires
 int counter = 0;                                // General counter variable
 int num_iluminaires = 0;                        // Number of luminaires in the system
 int gains[100];                                 // Array to store gain values for luminaires
+int hub_node = false;
 
 // Shared Variables for Multicore Processing
 volatile float sharedIlluminance = 0.0;        // Shared illuminance value
@@ -73,19 +75,19 @@ int addUniqueNodeId(int nodeId) {
     return 1;  // New node added
 }
 
-void performCalibration(int deskId) {
+float performCalibration(int deskId) {
     delay(1500);
     Serial.println("Calibrating...");
-    float backgroundIlluminance = measureIlluminance(deskId);
+    float backgroundIlluminance = measureIlluminance();
     //Serial.printf("Background Illuminance (I_bg): %.2f lux\n", backgroundIlluminance);
     
     float dutyCycles[] = {0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1};
     float illuminanceValues[11];
 
     for (int i = 0; i < 11; i++) {
-        setDutyCycle(deskId, dutyCycles[i]);
+        setDutyCycle(deskId, dutyCycles[i], node_ids.data(), node_ids[deskId]);
         delay(500);
-        illuminanceValues[i] = measureIlluminance(deskId);
+        illuminanceValues[i] = measureIlluminance();
         //Serial.printf("Duty Cycle: %.2f, Measured Illuminance: %.2f lux\n", dutyCycles[i], illuminanceValues[i]);
     }
     
@@ -98,6 +100,8 @@ void performCalibration(int deskId) {
     float staticGain = sumGain / 10.0;
     //Serial.printf("Static Gain (K): %.2f lux/unit\n", staticGain);
     Serial.println("Calibration done"); 
+
+    return staticGain;
 
 }
 
@@ -151,12 +155,79 @@ void setup() {
 void loop() {
     unsigned long currentTime = micros();  // Current time in microseconds
     int flag;
+    int i, j = 0; // Loop counters
 
-    // Handle serial commands
-    if (Serial.available()) {
-        String command = Serial.readStringUntil('\n');
-        command.trim();
-        handleCommand(command);
+    // Only the hub node handles serial commands
+    if(hub_node && calibrationDone){
+        if (Serial.available()) {
+            String input = Serial.readStringUntil('\n');
+            input.trim();
+            
+            // Split the input string by spaces
+            int var[3] = {0};  // Store numbers here
+            int varCount = 0;  // To count how many numbers we found
+            
+            // Split the string into parts
+            String parts[10];  // Array to hold the parts (letters and numbers)
+            int numParts = 0;
+            int startIndex = 0;
+
+            // Split by spaces
+            for (int i = 0; i < input.length(); i++) {
+                if (input.charAt(i) == ' ' || i == input.length() - 1) {
+                    // Get substring for the part
+                    if (i == input.length() - 1) {
+                        parts[numParts++] = input.substring(startIndex, i + 1);  // Last character
+                    } else {
+                        parts[numParts++] = input.substring(startIndex, i);
+                    }
+                    startIndex = i + 1;
+                }
+            }
+
+            // Extract and concatenate letters
+            String letters = "";
+            for (int i = 0; i < numParts; i++) {
+                if (isAlpha(parts[i].charAt(0))) {
+                    // Concatenate letters if the part is alphabetic
+                    letters += parts[i];
+                } else {
+                    var[varCount] = parts[i].toInt();
+                    varCount++;
+                }
+            }
+
+            // Print the concatenated letters and numbers
+            Serial.print("Command: ");
+            Serial.println(letters);  // Prints concatenated letters
+            Serial.print("Numbers: ");
+            for (int i = 0; i < varCount; i++) {
+                Serial.print(var[i]);
+                if (i < varCount - 1) {
+                    Serial.print(", ");
+                }
+            }
+            Serial.println();
+
+            byte cmdCode = getCommandCode(letters);
+
+            for(i = 0; i < varCount; i++){
+                uint8_t lowByte = var[i] & 0xFF;           // Extract lower 8 bits
+                uint8_t highByte = (var[i] >> 8) & 0xFF;   // Extract higher 8 bits
+                
+                canMsgTx.data[i+2] = lowByte; // Store lower byte in data[2]
+                canMsgTx.data[i+3] = highByte; // Store higher byte in data[3]
+                j = i+3;
+            }
+                    
+            
+            canMsgTx.can_id = int_node_address;
+            canMsgTx.can_dlc = j;
+            canMsgTx.data[0] = MSG_COMMAND;  // Signal calibration done
+            canMsgTx.data[1] = cmdCode;
+            can0.sendMessage(&canMsgTx);
+            handleCommand(canMsgTx, node_ids.data(), int_node_address);
+        }
     }
 
     // CAN message receiving
@@ -174,19 +245,22 @@ void loop() {
             }
             
             if(received_data == MSG_CALIBRATE) {
-                gains[int_sender_id] = measureIlluminance(deskId); //measure the gain relative to the one that sent me the message
-                calibrationCount++;
+                Serial.println("Calibration message received");
+                calibrationStarted = true;
+                gains[calibrationCount] = measureIlluminance(); //measure the gain relative to the one that sent me the message
                 Serial.print("Measured Gain:");
                 Serial.println(gains[int_sender_id]);
+                calibrationCount++;
 
                 if(int_node_address == node_ids[calibrationCount]){// If my id is the lowest uncalibrated one, start my calibration
-                    performCalibration(deskId);
+                    Serial.println("Starting calibration for my node");
+                    gains[calibrationCount] = performCalibration(calibrationCount);
                     canMsgTx.can_id = int_node_address;
                     canMsgTx.can_dlc = 1;
                     canMsgTx.data[0] = MSG_CALIBRATE;  // Signal calibration done
                     can0.sendMessage(&canMsgTx);
                     delay(1500);
-                    setDutyCycle(deskId,0); 
+                    setDutyCycle(deskId,0, node_ids.data(), node_ids[deskId]);
                     calibrationCount++;
                 }
                 if (calibrationCount >= num_iluminaires) { //if all luminaires have been calibrated
@@ -196,6 +270,10 @@ void loop() {
                 }
             }
         }
+
+        if(received_data == MSG_COMMAND){
+            handleCommand(canMsgRx,node_ids.data(),int_node_address);
+        }
         
     }
 
@@ -204,16 +282,17 @@ void loop() {
         if (currentTime - lastMessageTime >= timeout) {
             std::sort(node_ids.begin(), node_ids.end()); // Sort the ids
             num_iluminaires = node_ids.size();
-            if(int_node_address == node_ids[calibrationCount]){// If my id is the lowest uncalibrated one
-                performCalibration(deskId);
+            if(int_node_address == node_ids[0]){// If my id is the lowest uncalibrated one
+                gains[calibrationCount] = performCalibration(deskId);
                 canMsgTx.can_id = int_node_address;
                 canMsgTx.can_dlc = 1;
                 canMsgTx.data[0] = MSG_CALIBRATE;  // Signal calibration done
                 can0.sendMessage(&canMsgTx);
                 delay(1500);
-                setDutyCycle(deskId,0); 
+                setDutyCycle(deskId, 0, node_ids.data(), node_ids[deskId]);
                 calibrationCount++;
                 calibrationStarted = true;
+                hub_node = true;
             }
         }
     }
