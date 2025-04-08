@@ -55,6 +55,8 @@ int num_iluminaires = 0;                        // Number of luminaires in the s
 int gains[100];                                 // Array to store gain values for luminaires
 int hub_node = false;
 bool new_node = false;
+bool stream_y = false;                          //Flag to set illuminance stream on or off
+bool stream_u = false;                          //Flag to set duty cycle stream on or off
 
 // Shared Variables for Multicore Processing
 volatile float sharedIlluminance = 0.0;        // Shared illuminance value
@@ -70,6 +72,19 @@ bool streamIlluminance = false;                // Flag to indicate if illuminanc
 
 int timeStreamU = 0.0; // Time for duty cycle streaming
 int timeStreamY = 0.0; // Time for illuminance streaming
+
+unsigned long lastRestartTime = micros();
+
+int num_cycles = 0; // Number of cycles for the PID controller
+
+int totalEnergy = 0; // Total energy consumption
+int totalVisibilityError = 0; // Total visibility error
+int totalFlicker = 0; // Total flicker
+int avgEnergy = 0; // Average energy consumption
+int avgVisibilityError = 0; // Average visibility error
+int avgFlicker = 0; // Average flicker
+
+
 
 int addUniqueNodeId(int nodeId) {
     // Check if this nodeId is already stored
@@ -134,8 +149,13 @@ void setup() {
 
     // Initialize the luminaires, just one for now
     initializeLuminaires(1);
- 
-    delay(10000);
+
+    //get external illuminance
+    int adcValue = analogRead(ANALOG_PIN);
+    float voltage = (adcValue / 4095.0) * Vcc;
+    luminaires[0].external_illuminance = Luxmeter(voltage);
+
+    delay(5000);
 
     // Send a hello message to the CAN bus
     canMsgTx.can_id = int_node_address;
@@ -343,6 +363,7 @@ void loop1() {
     while (calibrationDone) { //JUST FOR TESTING COMMANDS
         //Serial.println("loop1 running...");
         unsigned long currentTime = micros();  // Current time in microseconds
+        num_cycles++;
 
         // Check if the required interval has passed
         if (currentTime - previousTime > sampInterval) {
@@ -366,6 +387,12 @@ void loop1() {
             float energy = calculateEnergy();
             float visibilityError = calculateVisibilityError(reference);
             float flicker = calculateFlicker();
+            totalEnergy += energy;
+            totalVisibilityError += visibilityError;
+            totalFlicker += flicker;
+            avgEnergy = totalEnergy / num_cycles;
+            avgVisibilityError = totalVisibilityError / num_cycles;
+            avgFlicker = totalFlicker / num_cycles;
 
             float lux_from_LED = gains[0] * (sharedPwmValue / 4095.0); // Calculate illuminance from LED
 
@@ -373,8 +400,8 @@ void loop1() {
             luminaires[0].power_consumption = energy;
             luminaires[0].flicker_error = flicker; 
             luminaires[0].visibility_error = visibilityError; 
-            luminaires[0].external_illuminance = sharedIlluminance;
-            luminaires[0].elapsed_time = currentTime * 1000;  // Convert milliseconds to seconds
+            //luminaires[0].external_illuminance = sharedIlluminance;
+            luminaires[0].elapsed_time = currentTime/1000;  // Convert milliseconds to seconds
             luminaires[0].duty_cycle = sharedPwmValue / 4095.0;  // Normalize to [0, 1]S
             luminaires[0].illuminance_ref = reference;
             luminaires[0].measured_illuminance = sharedIlluminance;
@@ -383,50 +410,56 @@ void loop1() {
             luminaires[0].external_illuminance = sharedIlluminance-lux_from_LED;  // Store external illuminance
 
             if(streamDutyCycle && hub_node){
-                Serial.printf("s u %d %d %d\n", int_node_address, luminaires[0].duty_cycle, luminaires[0].elapsed_time);
+                Serial.printf("s u %d %.2f %d\n", int_node_address, luminaires[0].duty_cycle, (int)luminaires[0].elapsed_time);
             }
             if(streamDutyCycle && !hub_node){
-                char x = 'u';
                 int value = luminaires[0].duty_cycle; // Placeholder for duty cycle
+                int elapsed_time_conv = (int)iluminaires[0].elapsed_time;
                 uint8_t lowByte1 = int_node_address & 0xFF;
                 uint8_t highByte1 = (int_node_address >> 8) & 0xFF;
                 uint8_t lowByte = value & 0xFF;
                 uint8_t highByte = (value >> 8) & 0xFF;
+                uint8_t lowByte2 = elapsed_time_conv & 0xFF;
+                uint8_t highByte2 = (elapsed_time_conv >> 8) & 0xFF;
     
                 canMsgTx.can_id = int_node_address;
-                canMsgTx.can_dlc = 7;
+                canMsgTx.can_dlc = 8;
                 canMsgTx.data[0] = MSG_COMMAND_GET;
-                canMsgTx.data[1] = COMMAND_s;
+                canMsgTx.data[1] = COMMAND_sx;
                 canMsgTx.data[2] = lowByte1;
                 canMsgTx.data[3] = highByte1; 
-                canMsgTx.data[4] = x;  
-                canMsgTx.data[5] = lowByte;
-                canMsgTx.data[6] = highByte;
+                canMsgTx.data[4] = lowByte;
+                canMsgTx.data[5] = highByte;
+                CanMsgTx.data[6] = lowByte2;
+                canMsgTx.data[7] = highByte2;
                 can0.sendMessage(&canMsgTx);
                 
             }
             
             if(streamIlluminance && hub_node){
-                Serial.printf("s y %d %d %d\n", int_node_address, luminaires[0].measured_illuminance, luminaires[0].elapsed_time);
+                Serial.printf("s y %d %.2f %d\n", int_node_address, luminaires[0].measured_illuminance, (int)luminaires[0].elapsed_time);
             }
             if(streamIlluminance && !hub_node){
                 
-                char x = 'y';
                 int value = luminaires[0].measured_illuminance; 
+                int elapsed_time_conv = (int)iluminaires[0].elapsed_time;
                 uint8_t lowByte1 = int_node_address & 0xFF;
                 uint8_t highByte1 = (int_node_address >> 8) & 0xFF;
                 uint8_t lowByte = value & 0xFF;
                 uint8_t highByte = (value >> 8) & 0xFF;
+                uint8_t lowByte2 = elapsed_time_conv & 0xFF;
+                uint8_t highByte2 = (elapsed_time_conv >> 8) & 0xFF;
     
                 canMsgTx.can_id = int_node_address;
-                canMsgTx.can_dlc = 7;
+                canMsgTx.can_dlc = 8;
                 canMsgTx.data[0] = MSG_COMMAND_GET;
-                canMsgTx.data[1] = COMMAND_s;
+                canMsgTx.data[1] = COMMAND_sy;
                 canMsgTx.data[2] = lowByte1;
                 canMsgTx.data[3] = highByte1; 
-                canMsgTx.data[4] = x; 
-                canMsgTx.data[5] = lowByte;
-                canMsgTx.data[6] = highByte;
+                canMsgTx.data[4] = lowByte;
+                canMsgTx.data[5] = highByte;
+                CanMsgTx.data[6] = lowByte2;
+                canMsgTx.data[7] = highByte2;
                 can0.sendMessage(&canMsgTx);
                 
             }

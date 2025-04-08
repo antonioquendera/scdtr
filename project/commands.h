@@ -69,6 +69,9 @@ struct Luminaire {
     float unoccupied_lower_bound;
     float current_lower_bound;
     float energy_cost;
+    float avg_energy;
+    float avg_visibility_error;
+    float avg_flicker;
 };
 
 #define ANALOG_PIN 26      // Analog input pin

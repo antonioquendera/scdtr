@@ -20,6 +20,8 @@ extern int int_node_address; // Unique ID for this node
 extern int deskId; // Desk ID for the system
 extern int node_ids[100]; // List of node IDs (CAN IDs)
 extern bool hub_node; // Flag to indicate if this is the hub node
+extern bool stream_y = false;                  //Flag to set illuminance stream on or off
+extern bool stream_u = false;                  //Flag to set duty cycle stream on or off
 
 
 
@@ -39,8 +41,10 @@ byte getCommandCode(String cmd) {
     else if (cmd == "gd") return COMMAND_gd;
     else if (cmd == "gp") return COMMAND_gp;
     else if (cmd == "gt") return COMMAND_gt;
-    else if (cmd == "s") return COMMAND_s;
-    else if (cmd == "S") return COMMAND_S;
+    else if (cmd == "su") return COMMAND_su;
+    else if (cmd == "Su") return COMMAND_Su;
+    else if (cmd == "sy") return COMMAND_sy;
+    else if (cmd == "Sy") return COMMAND_Sy;
     else if (cmd == "gb") return COMMAND_gb;
     else if (cmd == "gE") return COMMAND_gE;
     else if (cmd == "gV") return COMMAND_gV;
@@ -77,6 +81,7 @@ void handleCommandGet(struct can_frame command) {
 
     int16_t firstValue = command.data[2] | (command.data[3] << 8); //usually the luminaire number 0 to num_luminaieres-1
     int16_t secondValue = command.data[4] | (command.data[5] << 8);
+    int16_t thirdValue = command.data[6] | (command.data[7] << 8);
 
     float aux = secondValue;
     Serial.print("2nd val:");
@@ -171,14 +176,16 @@ void handleCommandGet(struct can_frame command) {
             Serial.println(secondValue);
             break;
         
-        case COMMAND_s: {
-            int16_t firstValue = command.data[2] | (command.data[3] << 8); //usually the luminaire number 0 to num_luminaieres-1
-            char extractedChar = static_cast<char>(command.data[4]);
-            int16_t secondValue = command.data[5] | (command.data[6] << 8);
-            Serial.printf("s %c %d %d %d\n", extractedChar, firstValue, secondValue, luminaires[0].elapsed_time);
+        case COMMAND_su: {
+            Serial.printf("s u %d %d %d\n",  firstValue, secondValue, thirdValue);
             break;
         }
-    
+        
+        case COMMAND_sy: {
+            Serial.printf("s y %d %d %d\n",  firstValue, secondValue, thirdValue);
+            break;
+        }
+
         case COMMAND_gb:
             Serial.print("gb");
             Serial.print(" ");
@@ -290,11 +297,19 @@ void handleCommand(struct can_frame command, int* node_ids, int int_node_address
             getElapsedTime(firstValue, node_ids, int_node_address, can0);
             break;
         
-        case COMMAND_s:
+        case COMMAND_su:
             startStream(firstValue, secondValue, node_ids, int_node_address, can0);
             break;
     
-        case COMMAND_S:
+        case COMMAND_sy:
+            startStream(firstValue, secondValue, node_ids, int_node_address, can0);
+            break;   
+
+        case COMMAND_Su:
+            stopStream(firstValue, secondValue, node_ids, int_node_address, can0);
+            break;
+        
+        case COMMAND_Sy:
             stopStream(firstValue, secondValue, node_ids, int_node_address, can0);
             break;
     
@@ -382,9 +397,6 @@ void startStream(char x, int deskId, int* node_ids, int int_node_address, MCP251
             }
         }
     }
-    
-
-
 }
 
 // Function to stop stream
@@ -547,7 +559,7 @@ void getExternalIlluminance(int deskId,int* node_ids, int int_node_address, MCP2
     struct can_frame canMsgTx;
 
     if(hub_node == false && node_ids[deskId] == int_node_address){//im not the hub soo i need to send the message for him to Serial.print()
-            int value = luminaires[0].external_illuminance ? 1 : 0;
+            int value = luminaires[0].external_illuminance;
             
             uint8_t lowByte1 = deskId & 0xFF;
             uint8_t highByte1 = (deskId >> 8) & 0xFF;
@@ -565,7 +577,7 @@ void getExternalIlluminance(int deskId,int* node_ids, int int_node_address, MCP2
             can0.sendMessage(&canMsgTx);
         
     }else if((hub_node == true) && (node_ids[deskId] == int_node_address) ) {//if im hub and the resquested node
-            int value = luminaires[0].external_illuminance ? 1 : 0;
+            int value = luminaires[0].external_illuminance;
             Serial.printf("d %d %d\n", deskId, value);
         
     }
@@ -661,16 +673,31 @@ void getElapsedTime(int deskId,int* node_ids, int int_node_address, MCP2515& can
 
 // Function to get buffer data
 void getBuffer(char x, int deskId, int* node_ids, int int_node_address, MCP2515& can0) {
-    if (x == 'y' || x == 'u') {
-        CircularBuffer<float, 2000>& buffer = streamData[deskId].buffer;
-        
-        String data = "";
-        for (int i = 0; i < buffer.size(); i++) {
-            data += String(buffer[i]);
-            if (i < buffer.size() - 1) {
-                data += ",";
+
+    else if((hub_node == true) && (node_ids[deskId] == int_node_address) ) {//if im hub and the resquested node
+    
+        if (x == 'y') {
+            printf("b y %d", deskId);
+            String data = "";
+            for (int i = 0; i < illuminanceBuffer.size(); i++) {
+                printf(" %.2f", illuminanceBuffer[i]);
+                if (i < illuminanceBuffer.size() - 1) {
+                    printf(",");
+                }
             }
         }
+        if (x == 'u') {
+            printf("b u %d\n",  deskId);
+            String data = "";
+            for (int i = 0; i < dutyCycleBuffer.size(); i++) {
+                printf(" %.2f", illuminanceBuffer[i]);
+                if (i < dutyCycleBuffer.size() - 1) {
+                    data += ",";
+                }
+            }
+        }
+        
+        
         
         // Send buffer data
         Serial.println(data);
@@ -1045,6 +1072,9 @@ void initializeLuminaires(int numLuminaires) {
             .elapsed_time = 0,
             .buffer_y = std::vector<float>(BUFFER_SIZE, 0.0),
             .buffer_u = std::vector<float>(BUFFER_SIZE, 0.0)
+            .avg_energy = 0.0,
+            .avg_visibility_error = 0.0,
+            .avg_flicker = 0.0,
         };
     }
 }
