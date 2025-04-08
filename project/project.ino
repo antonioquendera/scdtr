@@ -4,6 +4,7 @@
 #include <map>
 #include "commands.h"
 #include "pico/multicore.h"
+#include "hardware/watchdog.h"
 #include <algorithm>  // For std::sort
 
 // Constants and Parameters
@@ -61,6 +62,13 @@ volatile bool newDataAvailable = false;         // Flag indicating if new data i
 
 // Interrupt flag for CAN communication
 volatile bool got_irq = false;                  // Flag to indicate if a CAN interrupt has occurred
+
+// bools for streaming
+bool streamDutyCycle = false;                  // Flag to indicate if duty cycle streaming is enabled
+bool streamIlluminance = false;                // Flag to indicate if illuminance streaming is enabled
+
+int timeStreamU = 0.0; // Time for duty cycle streaming
+int timeStreamY = 0.0; // Time for illuminance streaming
 
 int addUniqueNodeId(int nodeId) {
     // Check if this nodeId is already stored
@@ -356,8 +364,10 @@ void loop1() {
 
             luminaires[0].LDR_voltage = voltage;
             luminaires[0].power_consumption = energy;
+            luminaires[0].flicker_error = flicker; 
+            luminaires[0].visibility_error = visibilityError; 
             luminaires[0].external_illuminance = sharedIlluminance;
-            luminaires[0].elapsed_time += millis() / 1000;  // Convert milliseconds to seconds
+            luminaires[0].elapsed_time = currentTime * 1000;  // Convert milliseconds to seconds
             luminaires[0].duty_cycle = sharedPwmValue / 4095.0;  // Normalize to [0, 1]S
             luminaires[0].illuminance_ref = reference;
             luminaires[0].measured_illuminance = sharedIlluminance;
@@ -365,7 +375,55 @@ void loop1() {
             luminaires[0].buffer_y.push_back((float)sharedIlluminance);  // Store illuminance in buffer
             luminaires[0].external_illuminance = sharedIlluminance-lux_from_LED;  // Store external illuminance
 
-
+            if(streamDutyCycle && hub_node){
+                Serial.printf("s u %d %d %d\n", int_node_address, luminaires[0].duty_cycle, luminaires[0].elapsed_time);
+            }
+            if(streamDutyCycle && !hub_node){
+                char x = 'u';
+                int value = luminaires[0].duty_cycle; // Placeholder for duty cycle
+                uint8_t lowByte1 = int_node_address & 0xFF;
+                uint8_t highByte1 = (int_node_address >> 8) & 0xFF;
+                uint8_t lowByte = value & 0xFF;
+                uint8_t highByte = (value >> 8) & 0xFF;
+    
+                canMsgTx.can_id = int_node_address;
+                canMsgTx.can_dlc = 7;
+                canMsgTx.data[0] = MSG_COMMAND_GET;
+                canMsgTx.data[1] = COMMAND_s;
+                canMsgTx.data[2] = lowByte1;
+                canMsgTx.data[3] = highByte1; 
+                canMsgTx.data[4] = x;  
+                canMsgTx.data[5] = lowByte;
+                canMsgTx.data[6] = highByte;
+                can0.sendMessage(&canMsgTx);
+                
+            }
+            
+            if(streamIlluminance && hub_node){
+                Serial.printf("s y %d %d %d\n", int_node_address, luminaires[0].measured_illuminance, luminaires[0].elapsed_time);
+            }
+            if(streamIlluminance && !hub_node){
+                
+                char x = 'y';
+                int value = luminaires[0].measured_illuminance; 
+                uint8_t lowByte1 = int_node_address & 0xFF;
+                uint8_t highByte1 = (int_node_address >> 8) & 0xFF;
+                uint8_t lowByte = value & 0xFF;
+                uint8_t highByte = (value >> 8) & 0xFF;
+    
+                canMsgTx.can_id = int_node_address;
+                canMsgTx.can_dlc = 7;
+                canMsgTx.data[0] = MSG_COMMAND_GET;
+                canMsgTx.data[1] = COMMAND_s;
+                canMsgTx.data[2] = lowByte1;
+                canMsgTx.data[3] = highByte1; 
+                canMsgTx.data[4] = x; 
+                canMsgTx.data[5] = lowByte;
+                canMsgTx.data[6] = highByte;
+                can0.sendMessage(&canMsgTx);
+                
+            }
+            
             newDataAvailable = true;  // Flag to indicate new data
 
             previousTime = currentTime;

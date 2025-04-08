@@ -56,6 +56,8 @@ struct Luminaire {
     bool feedback_control;
     float external_illuminance;
     float power_consumption;
+    float flicker_error;
+    float visibility_error;
     unsigned long elapsed_time;
     std::vector<float> buffer_y;
     std::vector<float> buffer_u;
@@ -105,36 +107,38 @@ void measureIlluminanceCommand(int deskId, int* node_ids, int int_node_address, 
 void setOccupancyState(int deskId, int val, int* node_ids, int int_node_address);
 void getOccupancyState(int firstValue, int* node_ids,int int_node_address, MCP2515& can0);
 void setAntiWindupOnOff(int deskId, int val, int* node_ids, int int_node_address);
+void getAntiWindup(int deskId, int* node_ids, int int_node_address, MCP2515& can0);
 void setFeebackOnOff(int deskId, int val, int* node_ids, int int_node_address) ;
 void getExternalIlluminance(int deskId,int* node_ids, int int_node_address,  MCP2515& can0) ;
 void getFeeback(int deskId,int* node_ids, int int_node_address, MCP2515& can0);
-void getInstateniousPower(int deskId,int* node_ids, int int_node_address);
-void getElapsedTime(int deskId,int* node_ids, int int_node_address);
+void getInstateniousPower(int deskId,int* node_ids, int int_node_address, MCP2515& can0);
+void getElapsedTime(int deskId,int* node_ids, int int_node_address, MCP2515& can0);
 int measureIlluminance();
 void measureLDRVoltage(int deskId, int* node_ids, int int_node_address, MCP2515& can0);
 void getEnergy();
 void getVisibilityError();
 void getFlicker();
 
+
 // Function to calculate illuminance from voltage
 extern float Luxmeter(float V);
 // Function to calculate Energy (E)
 extern float calculateEnergy();
-void calculateEnergyCommand(int deskId, int* node_ids, int int_node_address);
+void calculateEnergyCommand(int deskId, int* node_ids, int int_node_address, MCP2515& can0);
 // Function to calculate Visibility Error (V)
 extern float calculateVisibilityError(float referenceLux);
-void calculateVisibilityErrorCommand(int deskId, int* node_ids, int int_node_address, float referenceLux);
+void calculateVisibilityErrorCommand(int deskId, int* node_ids, int int_node_address, float referenceLux, MCP2515& can0);
 // Function to calculate Flicker (F)
 extern float calculateFlicker();
-void calculateFlickerCommand(int deskId, int* node_ids, int int_node_address);
+void calculateFlickerCommand(int deskId, int* node_ids, int int_node_address, MCP2515& can0);
 // Function to initialize luminaires
 extern void initializeLuminaires(int numLuminaires);
 
 // Function to start stream
-void startStream(char x, int deskId, int* node_ids, int int_node_address);
+void startStream(char x, int deskId, int* node_ids, int int_node_address, MCP2515& can0);
 // Function to stop stream
-void stopStream(char x, int deskId, int* node_ids, int int_node_address);
+void stopStream(char x, int deskId, int* node_ids, int int_node_address, MCP2515& can0);
 // Function to get buffer
-void getBuffer(char x, int deskId, int* node_ids, int int_node_address);
+void getBuffer(char x, int deskId, int* node_ids, int int_node_address, MCP2515& can0);
 
 #endif // COMMANDS_H
