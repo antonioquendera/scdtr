@@ -54,6 +54,7 @@ int counter = 0;                                // General counter variable
 int num_iluminaires = 0;                        // Number of luminaires in the system
 int gains[100];                                 // Array to store gain values for luminaires
 int hub_node = false;
+bool new_node = false;
 
 // Shared Variables for Multicore Processing
 volatile float sharedIlluminance = 0.0;        // Shared illuminance value
@@ -93,7 +94,7 @@ float performCalibration(int deskId) {
     float illuminanceValues[11];
 
     for (int i = 0; i < 11; i++) {
-        setDutyCycle(deskId, dutyCycles[i], node_ids.data(), node_ids[deskId]);
+        setDutyCycle(deskId, dutyCycles[i], node_ids.data(), node_ids[deskId], can0);
         delay(500);
         illuminanceValues[i] = measureIlluminance();
         //Serial.printf("Duty Cycle: %.2f, Measured Illuminance: %.2f lux\n", dutyCycles[i], illuminanceValues[i]);
@@ -165,12 +166,15 @@ void loop() {
     int flag;
     int i, j = 0; // Loop counters
 
-    // Only the hub node handles serial commands
-    if(hub_node && calibrationDone){
-        if (Serial.available()) {
-            String input = Serial.readStringUntil('\n');
-            input.trim();
-            
+    if (Serial.available()) {
+        String input = Serial.readStringUntil('\n');
+        input.trim();
+
+        if (input == "hub") {
+            hub_node = true;
+        }
+        // Only the hub node handles serial commands
+        else if(hub_node && calibrationDone){   
             // Split the input string by spaces
             int var[3] = {0};  // Store numbers here
             int varCount = 0;  // To count how many numbers we found
@@ -250,6 +254,9 @@ void loop() {
         if(!calibrationDone){ //If calibration has not completed
             
             if(addUniqueNodeId(int_sender_id)){//If a message is received from a new node, add it to the list and skip loop iteration
+                Serial.print("New node added: ");
+                Serial.println(int_sender_id);
+                new_node = true;
                 continue; //skip rest of loop
             }
             
@@ -271,7 +278,7 @@ void loop() {
                     canMsgTx.data[0] = MSG_CALIBRATE;  // Signal calibration done
                     can0.sendMessage(&canMsgTx);
                     delay(1500);
-                    setDutyCycle(calibrationCount, 0, node_ids.data(), node_ids[calibrationCount]);
+                    setDutyCycle(calibrationCount, 0, node_ids.data(), node_ids[calibrationCount], can0);
                     calibrationCount++;
                 }
                 if (calibrationCount >= num_iluminaires) { //if all luminaires have been calibrated
@@ -285,15 +292,14 @@ void loop() {
         if(received_data == MSG_COMMAND){
             handleCommand(canMsgRx, node_ids.data(), int_node_address, can0);
         }
-        if(received_data == MSG_COMMAND_GET && hub_node){
+        if((received_data == MSG_COMMAND_GET) && (hub_node==true)){
             handleCommandGet(canMsgRx);
         }
-        
     }
 
     // If calibration has not started and 2 seconds have passed without receiving a message and i have the lowest uncalibrated id, calibrate and send MSG_CALIBRATE
     if(!calibrationStarted){
-        if (currentTime - lastMessageTime >= timeout) {
+        if ((currentTime - lastMessageTime >= timeout) && (new_node == true)) {
             std::sort(node_ids.begin(), node_ids.end()); // Sort the ids
             num_iluminaires = node_ids.size();
             if(int_node_address == node_ids[0]){// If my id is the lowest uncalibrated one
@@ -303,10 +309,10 @@ void loop() {
                 canMsgTx.data[0] = MSG_CALIBRATE;  // Signal calibration done
                 can0.sendMessage(&canMsgTx);
                 delay(1500);
-                setDutyCycle(calibrationCount, 0, node_ids.data(), node_ids[calibrationCount]);
+                setDutyCycle(calibrationCount, 0, node_ids.data(), node_ids[calibrationCount], can0);
                 calibrationCount++;
                 calibrationStarted = true;
-                hub_node = true;
+                //hub_node = true;
             }
         }
     }
@@ -334,7 +340,8 @@ void loop1() {
     uint8_t b[4];
 
     //while (calibrationDone) {
-    while (false) { //JUST FOR TESTING COMMANDS
+    while (calibrationDone) { //JUST FOR TESTING COMMANDS
+        //Serial.println("loop1 running...");
         unsigned long currentTime = micros();  // Current time in microseconds
 
         // Check if the required interval has passed

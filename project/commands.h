@@ -12,6 +12,8 @@
 #define MSG_COMMAND_GET 0x04
 class MCP2515;
 
+
+
 #define COMMAND_u 0x01
 #define COMMAND_gu 0x02
 #define COMMAND_r 0x03
@@ -41,6 +43,8 @@ class MCP2515;
 #define COMMAND_C 0x28
 #define COMMAND_R 0x29
 #define COMMAND_ga 0x30
+#define ACK 0x31 // Acknowledge message
+#define ERR 0x32 // Negative acknowledge message
 
 
 
@@ -99,16 +103,16 @@ byte getCommandCode(String cmd);
 // Function declarations
 void handleCommandGet(struct can_frame command);
 void handleCommand(struct can_frame command, int* node_ids, int int_node_address, MCP2515& can0);
-void setDutyCycle(int deskId, int val , int* node_ids, int int_node_address);
+void setDutyCycle(int deskId, int val , int* node_ids, int int_node_address, MCP2515& can0);
 void getDutyCycle(int deskId , int* node_ids, int int_node_address, MCP2515& can0);
-void setIlluminanceRef(int deskId, int val , int* node_ids, int int_node_address);
+void setIlluminanceRef(int deskId, int val , int* node_ids, int int_node_address, MCP2515& can0);
 void getIlluminanceRef(int deskId, int* node_ids, int int_node_address, MCP2515& can0);
 void measureIlluminanceCommand(int deskId, int* node_ids, int int_node_address, MCP2515& can0);
-void setOccupancyState(int deskId, int val, int* node_ids, int int_node_address);
+void setOccupancyState(int deskId, int val, int* node_ids, int int_node_address, MCP2515& can0);
 void getOccupancyState(int firstValue, int* node_ids,int int_node_address, MCP2515& can0);
-void setAntiWindupOnOff(int deskId, int val, int* node_ids, int int_node_address);
+void setAntiWindupOnOff(int deskId, int val, int* node_ids, int int_node_address, MCP2515& can0);
 void getAntiWindup(int deskId, int* node_ids, int int_node_address, MCP2515& can0);
-void setFeebackOnOff(int deskId, int val, int* node_ids, int int_node_address) ;
+void setFeebackOnOff(int deskId, int val, int* node_ids, int int_node_address, MCP2515& can0) ;
 void getExternalIlluminance(int deskId,int* node_ids, int int_node_address,  MCP2515& can0) ;
 void getFeeback(int deskId,int* node_ids, int int_node_address, MCP2515& can0);
 void getInstateniousPower(int deskId,int* node_ids, int int_node_address, MCP2515& can0);
