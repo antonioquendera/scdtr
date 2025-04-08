@@ -7,6 +7,13 @@ StreamData streamData[MAX_DESKS];  // Define MAX_DESKS based on your configurati
 extern float reference; // Reference value for PID
 extern bool hub_node; // Flag to indicate if this is the hub node
 
+extern CircularBuffer<float, bufferSize> dutyCycleBuffer;      // Circular buffer for duty cycle data
+extern CircularBuffer<float, bufferSize> illuminanceBuffer;
+extern std::map<int, Luminaire> luminaires; // Map to store luminaires
+extern int int_node_address; // Unique ID for this node
+extern int deskId; // Desk ID for the system
+extern int node_ids[100]; // List of node IDs (CAN IDs)
+
 byte getCommandCode(String cmd) {
     if (cmd == "u") return COMMAND_u;
     if (cmd == "gu") return COMMAND_gu;
@@ -60,27 +67,75 @@ void handleCommandGet(struct can_frame command) {
             break;
         
         case COMMAND_gr:
+            Serial.print("r");
+            Serial.print(" ");
+            Serial.print(firstValue);
+            Serial.print(" ");
+            Serial.println(secondValue);
             break;
         
         case COMMAND_gy:
+            Serial.print("y");
+            Serial.print(" ");
+            Serial.print(firstValue);
+            Serial.print(" ");
+            Serial.println(secondValue);
             break;
     
         case COMMAND_gv:
+            Serial.print("v");
+            Serial.print(" ");
+            Serial.print(firstValue);
+            Serial.print(" ");
+            Serial.println(secondValue);
             break;
     
         case COMMAND_go:
+            Serial.print("o");
+            Serial.print(" ");
+            Serial.print(firstValue);
+            Serial.print(" ");
+            Serial.println(secondValue);
+            break;
+
+        case COMMAND_ga:
+            Serial.print("a");
+            Serial.print(" ");
+            Serial.print(firstValue);
+            Serial.print(" ");
+            Serial.println(secondValue);
             break;
     
         case COMMAND_gf:
+            Serial.print("f");
+            Serial.print(" ");
+            Serial.print(firstValue);
+            Serial.print(" ");
+            Serial.println(secondValue);
             break;
     
         case COMMAND_gd:
+            Serial.print("d");
+            Serial.print(" ");
+            Serial.print(firstValue);
+            Serial.print(" ");
+            Serial.println(secondValue);
             break;
     
         case COMMAND_gp:
+            Serial.print("p");
+            Serial.print(" ");
+            Serial.print(firstValue);
+            Serial.print(" ");
+            Serial.println(secondValue);
             break;
         
         case COMMAND_gt:
+            Serial.print("t");
+            Serial.print(" ");
+            Serial.print(firstValue);
+            Serial.print(" ");
+            Serial.println(secondValue);
             break;
         
         case COMMAND_s:
@@ -90,19 +145,39 @@ void handleCommandGet(struct can_frame command) {
             break;
     
         case COMMAND_gb:
+            Serial.print("b");
+            Serial.print(" ");
+            Serial.print(firstValue);
+            Serial.print(" ");
+            Serial.println(secondValue);
             break;
     
         case COMMAND_gE:
+            Serial.print("E");
+            Serial.print(" ");
+            Serial.print(firstValue);
+            Serial.print(" ");
+            Serial.println(secondValue);
             break;
         
         case COMMAND_gV:
+            Serial.print("V");
+            Serial.print(" ");
+            Serial.print(firstValue);
+            Serial.print(" ");
+            Serial.println(secondValue);
             break;
         
         case COMMAND_gF:
+            Serial.print("F");
+            Serial.print(" ");
+            Serial.print(firstValue);
+            Serial.print(" ");
+            Serial.println(secondValue);
             break;
 
         default:
-            Serial.println("Unknown command");
+            Serial.println("err");
             break;
     }
 }
@@ -121,71 +196,58 @@ void handleCommand(struct can_frame command, int* node_ids, int int_node_address
 
     switch (command.data[1]) {
         case COMMAND_u:
-            Serial.print("-u ");
-            Serial.print(firstValue);
-            Serial.print(" ");
-            Serial.print(secondValue);
-            Serial.println("-");
             setDutyCycle(firstValue, secondValue, node_ids, int_node_address);
             break;
     
         case COMMAND_gu:
-            Serial.println("-gu-");
             getDutyCycle(firstValue, node_ids, int_node_address, can0); 
             break;
         
         case COMMAND_r:
-            Serial.println("-r-");
             setIlluminanceRef(firstValue, secondValue, node_ids, int_node_address);
             break;
     
         case COMMAND_gr:
-            Serial.println("-gr-");
-            getIlluminanceRef(firstValue, node_ids, int_node_address);
+            getIlluminanceRef(firstValue, node_ids, int_node_address, can0);
             break;
         
         case COMMAND_gy:
-            Serial.println("-gy-");
-            measureIlluminanceCommand(firstValue, node_ids, int_node_address);
+            measureIlluminanceCommand(firstValue, node_ids, int_node_address, can0);
             break;
     
         case COMMAND_gv:
-            Serial.println("-gv-");
-            measureLDRVoltage(firstValue, node_ids, int_node_address);
+            measureLDRVoltage(firstValue, node_ids, int_node_address, can0);
             break;
     
         case COMMAND_o:
-            Serial.println("-o-");
             setOccupancyState(firstValue, secondValue, node_ids, int_node_address);
             break;
         
         case COMMAND_go:
-            Serial.println("-go-");
-            getOccupancyState(firstValue, node_ids, int_node_address);
+            getOccupancyState(firstValue, node_ids, int_node_address, can0);
             break;
         
         case COMMAND_a:
-            Serial.println("-a-");
             setAntiWindupOnOff(firstValue, secondValue, node_ids, int_node_address);
             break;
         
+        case COMMAND_ga:
+            //STILL NEED TO CHANGE
+            break;
+        
         case COMMAND_f:
-            Serial.println("-f-");
             setFeebackOnOff(firstValue, secondValue, node_ids, int_node_address);
             break;
     
         case COMMAND_gf:
-            Serial.println("-gf-");
-            getFeeback(firstValue, node_ids, int_node_address);
+            getFeeback(firstValue, node_ids, int_node_address, can0);
             break;
     
         case COMMAND_gd:
-            Serial.println("-gd-");
-            getExternalIlluminance(firstValue, node_ids, int_node_address);
+            getExternalIlluminance(firstValue, node_ids, int_node_address, can0);
             break;
     
         case COMMAND_gp:
-            Serial.println("-gp-");
             getInstateniousPower(firstValue, node_ids, int_node_address);
             break;
         
@@ -216,7 +278,7 @@ void handleCommand(struct can_frame command, int* node_ids, int int_node_address
         
         case COMMAND_gV:
             Serial.println("-gV-");
-            calculateVisibilityErrorCommand(deskId, node_ids, int_node_address, 5); // fix this
+            calculateVisibilityErrorCommand(deskId, node_ids, int_node_address, reference); // fix this
             break;
         
         case COMMAND_gF:
@@ -225,7 +287,7 @@ void handleCommand(struct can_frame command, int* node_ids, int int_node_address
             break;
 
         default:
-            Serial.println("Unknown command");
+            Serial.println("err");
             break;
     }
 }
@@ -260,49 +322,122 @@ void stopStream(char x, int deskId, int* node_ids, int int_node_address) {
     }
 }
 
-void getOccupancyState(int deskId, int* node_ids, int int_node_address){
+void getOccupancyState(int deskId, int* node_ids, int int_node_address, MCP2515& can0){
+    
+    struct can_frame canMsgTx;
+
+    if(deskId != 0 && node_ids[deskId] == int_node_address){//im not the hub soo i need to send the message for him to Serial.print()
+            int value = luminaires[0].occupied ? 1 : 0;
+            
+            uint8_t lowByte1 = deskId & 0xFF;
+            uint8_t highByte1 = (deskId >> 8) & 0xFF;
+            uint8_t lowByte = value & 0xFF;
+            uint8_t highByte = (value >> 8) & 0xFF;
+
+            canMsgTx.can_id = int_node_address;
+            canMsgTx.can_dlc = 6;
+            canMsgTx.data[0] = MSG_COMMAND_GET;
+            canMsgTx.data[1] = COMMAND_go;
+            canMsgTx.data[2] = lowByte1;
+            canMsgTx.data[3] = highByte1;
+            canMsgTx.data[4] = lowByte;
+            canMsgTx.data[5] = highByte;
+            can0.sendMessage(&canMsgTx);
+        
+    }else if(deskId == 0) {//if im hub
+            int value = luminaires[0].occupied ? 1 : 0;
+            Serial.printf("o %d %d\n", deskId, value);
+        
+    }
+
     if(node_ids[deskId] == int_node_address) {//if it is requesting my info.
         Serial.printf("o %d %d\n", deskId, luminaires[deskId].occupied ? 1 : 0);
     }
 }
 void setOccupancyState(int deskId, int val, int* node_ids, int int_node_address){
     if(node_ids[deskId] == int_node_address) {//if it is requesting my info.
-        luminaires[deskId].occupied = (val != 0);
+        luminaires[0].occupied = (val != 0);
         Serial.println("ack");
     }
 }
 
 void setAntiWindupOnOff(int deskId, int val, int* node_ids, int int_node_address) {
     if(node_ids[deskId] == int_node_address) {//if it is requesting my info.
-        luminaires[deskId].anti_windup = (val != 0);
+        luminaires[0].anti_windup = (val != 0);
         Serial.println("ack");
     }
 }
 
 void setFeebackOnOff(int deskId, int val, int* node_ids, int int_node_address) {
     if(node_ids[deskId] == int_node_address) {//if it is requesting my info.
-        luminaires[deskId].feedback_control = (val != 0);
+        luminaires[0].feedback_control = (val != 0);
         Serial.println("ack");
     }
 }
-void getFeeback(int deskId,int* node_ids, int int_node_address) {
-    if(node_ids[deskId] == int_node_address) {//if it is requesting my info.
-        Serial.printf("f %d %d\n", deskId, luminaires[deskId].feedback_control ? 1 : 0);
+void getFeeback(int deskId,int* node_ids, int int_node_address, MCP2515& can0) {
+
+    struct can_frame canMsgTx;
+
+    if(deskId != 0 && node_ids[deskId] == int_node_address){//im not the hub soo i need to send the message for him to Serial.print()
+            int value = luminaires[0].feedback_control ? 1 : 0;
+            
+            uint8_t lowByte1 = deskId & 0xFF;
+            uint8_t highByte1 = (deskId >> 8) & 0xFF;
+            uint8_t lowByte = value & 0xFF;
+            uint8_t highByte = (value >> 8) & 0xFF;
+
+            canMsgTx.can_id = int_node_address;
+            canMsgTx.can_dlc = 6;
+            canMsgTx.data[0] = MSG_COMMAND_GET;
+            canMsgTx.data[1] = COMMAND_gf;
+            canMsgTx.data[2] = lowByte1;
+            canMsgTx.data[3] = highByte1;
+            canMsgTx.data[4] = lowByte;
+            canMsgTx.data[5] = highByte;
+            can0.sendMessage(&canMsgTx);
+        
+    }else if(deskId == 0) {//if im hub
+            int value = luminaires[0].feedback_control ? 1 : 0;
+            Serial.printf("f %d %d\n", deskId, value);
+        
     }
 }
-void getExternalIlluminance(int deskId,int* node_ids, int int_node_address) {
-    if(node_ids[deskId] == int_node_address) {//if it is requesting my info.
-        Serial.printf("d %d %.2f\n", deskId, luminaires[deskId].external_illuminance);
+void getExternalIlluminance(int deskId,int* node_ids, int int_node_address, MCP2515& can0) {
+    
+    struct can_frame canMsgTx;
+
+    if(deskId != 0 && node_ids[deskId] == int_node_address){//im not the hub soo i need to send the message for him to Serial.print()
+            int value = luminaires[0].external_illuminance ? 1 : 0;
+            
+            uint8_t lowByte1 = deskId & 0xFF;
+            uint8_t highByte1 = (deskId >> 8) & 0xFF;
+            uint8_t lowByte = value & 0xFF;
+            uint8_t highByte = (value >> 8) & 0xFF;
+
+            canMsgTx.can_id = int_node_address;
+            canMsgTx.can_dlc = 6;
+            canMsgTx.data[0] = MSG_COMMAND_GET;
+            canMsgTx.data[1] = COMMAND_gf;
+            canMsgTx.data[2] = lowByte1;
+            canMsgTx.data[3] = highByte1;
+            canMsgTx.data[4] = lowByte;
+            canMsgTx.data[5] = highByte;
+            can0.sendMessage(&canMsgTx);
+        
+    }else if(deskId == 0) {//if im hub
+            int value = luminaires[0].external_illuminance ? 1 : 0;
+            Serial.printf("d %d %d\n", deskId, value);
+        
     }
 }
 void getInstateniousPower(int deskId,int* node_ids, int int_node_address) {
     if(node_ids[deskId] == int_node_address) {//if it is requesting my info.
-        Serial.printf("p %d %.2f\n", deskId, luminaires[deskId].power_consumption);
+        Serial.printf("p %d %.2f\n", deskId, luminaires[0].power_consumption);
     }
 }
 void getElapsedTime(int deskId,int* node_ids, int int_node_address) {
     if(node_ids[deskId] == int_node_address) {//if it is requesting my info.
-        Serial.printf("t %d %lu\n", deskId, luminaires[deskId].elapsed_time);
+        Serial.printf("t %d %lu\n", deskId, luminaires[0].elapsed_time);
     }
 }
 
@@ -326,18 +461,16 @@ void getBuffer(char x, int deskId, int* node_ids, int int_node_address) {
 }
 
 // Function to set Duty Cycle
-void setDutyCycle(int deskId, int val, int* node_ids, int int_node_address) {
-    //Serial.print("node_ids[deskId] = ");
-    //Serial.println(node_ids[deskId]);
-    //Serial.print("int_node_address = ");
-    //Serial.println(int_node_address);
+void setDutyCycle(int deskId, int val, int* node_ids, int int_node_address) {;
     if(node_ids[deskId] == int_node_address) {//if it is requesting my info.
         int pwm_value = (int) (val*40.95); // val is in [0, 100] and pwm_value is in [0, 4095]
         pwm_value = constrain(pwm_value, 0, 4095);
         //Serial.println(pwm_value);
         analogWrite(LED_PWM_PIN, pwm_value);
         dutyCycleBuffer.push(val);
-        //Serial.println("ack");
+        luminaires[0].buffer_u.push_back(val);
+        luminaires[0].duty_cycle = val; // Placeholder for illuminance
+        Serial.println("ack");
     }
 }
 
@@ -346,7 +479,7 @@ void getDutyCycle(int deskId, int* node_ids, int int_node_address, MCP2515& can0
 
     struct can_frame canMsgTx;
 
-    if(deskId != 0){//im not the hub soo i need to send the message for him to Serial.print()
+    if(deskId != 0 && node_ids[deskId] == int_node_address){//im not the hub soo i need to send the message for him to Serial.print()
         if (!dutyCycleBuffer.isEmpty()) {
             int value = dutyCycleBuffer.last();
             
@@ -365,15 +498,13 @@ void getDutyCycle(int deskId, int* node_ids, int int_node_address, MCP2515& can0
             canMsgTx.data[5] = highByte;
             can0.sendMessage(&canMsgTx);
         }
-    }
-    
-    if(node_ids[deskId] == int_node_address) {//if it is simply requesting my info.
+    }else if(deskId == 0) {//if im hub
         if (!dutyCycleBuffer.isEmpty()) {
-            Serial.printf("u %d %.2f\n", deskId, dutyCycleBuffer.last());
-        } else {
-            Serial.println("err");
+            int value = dutyCycleBuffer.last();
+            Serial.printf("u %d %d\n", deskId, value);
         }
     }
+    
 }
 
 // Function to set Illuminance Reference
@@ -386,20 +517,74 @@ void setIlluminanceRef(int deskId, int val, int* node_ids, int int_node_address)
 }
 
 // Function to get Illuminance Reference
-void getIlluminanceRef(int deskId, int* node_ids, int int_node_address) { 
-    if(node_ids[deskId] == int_node_address) {//if it is requesting my info.
-        Serial.printf("r %.2f\n", reference);
+void getIlluminanceRef(int deskId, int* node_ids, int int_node_address, MCP2515& can0) { 
+
+    struct can_frame canMsgTx;
+
+    if(deskId != 0 && node_ids[deskId] == int_node_address){//im not the hub soo i need to send the message for him to Serial.print()
+            int value = reference;
+            
+            uint8_t lowByte1 = deskId & 0xFF;
+            uint8_t highByte1 = (deskId >> 8) & 0xFF;
+            uint8_t lowByte = value & 0xFF;
+            uint8_t highByte = (value >> 8) & 0xFF;
+
+            canMsgTx.can_id = int_node_address;
+            canMsgTx.can_dlc = 6;
+            canMsgTx.data[0] = MSG_COMMAND_GET;
+            canMsgTx.data[1] = COMMAND_gr;
+            canMsgTx.data[2] = lowByte1;
+            canMsgTx.data[3] = highByte1;
+            canMsgTx.data[4] = lowByte;
+            canMsgTx.data[5] = highByte;
+            can0.sendMessage(&canMsgTx);
+
+    }else if(deskId == 0) {//if im hub
+            int value = reference;
+            Serial.printf("r %d %d\n", deskId, value);
+        
     }
+
 }
 
 // Function to measure Illuminance
-void measureIlluminanceCommand(int deskId, int* node_ids, int int_node_address) { 
-    if(node_ids[deskId] == int_node_address) {//if it is requesting my info.
-        int adcValue = analogRead(ANALOG_PIN);
-        float voltage = (adcValue / 4095.0) * Vcc;
-        float illuminance = Luxmeter(voltage);
-        illuminanceBuffer.push(illuminance);
+void measureIlluminanceCommand(int deskId, int* node_ids, int int_node_address, MCP2515& can0) { 
+
+    struct can_frame canMsgTx;
+
+    if(deskId != 0 && node_ids[deskId] == int_node_address){//im not the hub soo i need to send the message for him to Serial.print()
+            int adcValue = analogRead(ANALOG_PIN);
+            float voltage = (adcValue / 4095.0) * Vcc;
+            float illuminance = Luxmeter(voltage);
+            illuminanceBuffer.push(illuminance);
+
+            int value = illuminance;
+
+            uint8_t lowByte1 = deskId & 0xFF;
+            uint8_t highByte1 = (deskId >> 8) & 0xFF;
+            uint8_t lowByte = value & 0xFF;
+            uint8_t highByte = (value >> 8) & 0xFF;
+
+            canMsgTx.can_id = int_node_address;
+            canMsgTx.can_dlc = 6;
+            canMsgTx.data[0] = MSG_COMMAND_GET;
+            canMsgTx.data[1] = COMMAND_gy;
+            canMsgTx.data[2] = lowByte1;
+            canMsgTx.data[3] = highByte1;
+            canMsgTx.data[4] = lowByte;
+            canMsgTx.data[5] = highByte;
+            can0.sendMessage(&canMsgTx);
+
+    }else if(deskId == 0) {//if im hub
+            int adcValue = analogRead(ANALOG_PIN);
+            float voltage = (adcValue / 4095.0) * Vcc;
+            float illuminance = Luxmeter(voltage);
+            illuminanceBuffer.push(illuminance);
+
+            Serial.printf("y %d %d\n", deskId, illuminance);
+        
     }
+
 }
 
 int measureIlluminance() { 
@@ -412,12 +597,35 @@ int measureIlluminance() {
 }
 
 // Function to measure LDR Voltage
-void measureLDRVoltage(int deskId, int* node_ids, int int_node_address) { 
-    if(node_ids[deskId] == int_node_address) {//if it is requesting my info.
-        int adcValue = analogRead(ANALOG_PIN);
-        float voltage = (adcValue / 4095.0) * Vcc;
-        Serial.printf("v %.2f\n", voltage);
+void measureLDRVoltage(int deskId, int* node_ids, int int_node_address, MCP2515& can0) { 
+    struct can_frame canMsgTx;
+
+    if(deskId != 0 && node_ids[deskId] == int_node_address){//im not the hub soo i need to send the message for him to Serial.print()
+
+            int value = luminaires[0].LDR_voltage;
+
+            uint8_t lowByte1 = deskId & 0xFF;
+            uint8_t highByte1 = (deskId >> 8) & 0xFF;
+            uint8_t lowByte = value & 0xFF;
+            uint8_t highByte = (value >> 8) & 0xFF;
+
+            canMsgTx.can_id = int_node_address;
+            canMsgTx.can_dlc = 6;
+            canMsgTx.data[0] = MSG_COMMAND_GET;
+            canMsgTx.data[1] = COMMAND_gv;
+            canMsgTx.data[2] = lowByte1;
+            canMsgTx.data[3] = highByte1;
+            canMsgTx.data[4] = lowByte;
+            canMsgTx.data[5] = highByte;
+            can0.sendMessage(&canMsgTx);
+
+    }else if(deskId == 0) {//if im hub
+            int voltage = luminaires[0].LDR_voltage;
+
+            Serial.printf("v %d %d\n", deskId, voltage);
+        
     }
+
 }
 
 // Function to get Energy
@@ -517,7 +725,7 @@ float calculateFlicker() {
     return flicker / dutyCycleBuffer.size();
 }
 
-// Initialize luminaires
+// Initialize luminaires                 WE ASSUME MY NODE IS LUMINAIRE 0
 void initializeLuminaires(int numLuminaires) {
     luminaires.clear();  // Clear previous entries
 
@@ -538,167 +746,3 @@ void initializeLuminaires(int numLuminaires) {
         };
     }
 }
-
-// else if (sscanf(command.c_str(), "%c %c %d", &cmd, &x, &deskId) >= 1) {
-    //     switch (cmd) {
-    //         case 's': {
-    //             // Start streaming for a specific variable and desk
-    //             if (sscanf(command.c_str(), "s %c %d %f %lu", &x, &deskId, &val, &time) == 4) {
-    //                 startStream(x, deskId, val, time);
-    //             } else {
-    //                 startStream(x, deskId, val, time);  // Default time is '0' when not provided
-    //             }
-    //             break;
-    //         }
-    //         case 'S': {
-    //             // Stop streaming for a specific variable and desk
-    //             stopStream(x, deskId);
-    //             break;
-    //         }
-    //         case 'g': {
-    //             // Get buffer for the variable of a specific desk
-    //             if (command.startsWith("g b")) {
-    //                 getBuffer(x, deskId);
-    //             }
-    //             break;
-    //         }
-    //         default: Serial.println("err"); break;
-    //     }
-    // }
-    // else if (sscanf(command.c_str(), "%c %d %f", &cmd, &deskId, &val) >= 1) {
-    //     switch (cmd) {
-    //         case 'u': {
-    //             // Set duty cycle for luminaire i
-    //             setDutyCycle(deskId,val);
-    //             break;
-    //         }
-    //         case 'r': {
-    //             // Set illuminance reference for luminaire i
-    //             setIlluminanceRef(deskId,val);
-    //             break;
-    //         }
-    //         case 'o': {
-    //             // Set occupancy state for desk i
-    //             luminaires[deskId].occupied = (val != 0);
-    //             Serial.println("ack");
-    //             break;
-    //         }
-    //         case 'a': {
-    //             // Set anti-windup state for desk i
-    //             luminaires[deskId].anti_windup = (val != 0);
-    //             Serial.println("ack");
-    //             break;
-    //         }
-    //         case 'f': {
-    //             // Set feedback control state for desk i
-    //             luminaires[deskId].feedback_control = (val != 0);
-    //             Serial.println("ack");
-    //             break;
-    //         }
-    //         default: Serial.println("err"); break;
-    //     }
-    // }
-    // else if (sscanf(command.c_str(), "%c %d", &cmd, &deskId) >= 1) {
-    //     switch (cmd) 
-    //     {
-    //         case 'g': {
-    //             } else if (command.startsWith("g d")) {
-    //                 // Get current external illuminance of desk i
-    //                 Serial.printf("d %d %.2f\n", deskId, luminaires[deskId].external_illuminance);
-    //             } else if (command.startsWith("g p")) {
-    //                 // Get instantaneous power consumption of desk i
-    //                 Serial.printf("p %d %.2f\n", deskId, luminaires[deskId].power_consumption);
-    //             } else if (command.startsWith("g t")) {
-    //                 // Get the elapsed time since the last restart for desk i
-    //                 Serial.printf("t %d %lu\n", deskId, luminaires[deskId].elapsed_time);
-    //             } else if (command.startsWith("g a")) {
-    //                 // Get anti-windup state for desk i
-    //                 Serial.printf("a %d %d\n", deskId, luminaires[deskId].anti_windup ? 1 : 0);
-    //             } else if (command.startsWith("g f")) {
-    //                 // Get feedback control state for desk i
-    //                 Serial.printf("f %d %d\n", deskId, luminaires[deskId].feedback_control ? 1 : 0);
-    //             } else if (command.startsWith("g b")) {
-    //                 // Get the last minute buffer of the variable <x> of the desk <i>
-    //                 std::vector<float>& buffer = (x == 'y') ? luminaires[deskId].buffer_y : luminaires[deskId].buffer_u;
-
-    //                 String data = "";
-    //                 for (int i = 0; i < buffer.size(); i++) {
-    //                     data += String(buffer[i]);
-    //                     if (i < buffer.size() - 1) {
-    //                         data += ",";
-    //                     }
-    //                 }
-
-    //                 // Send buffer data
-    //                 Serial.printf("b %c %d %s\n", x, deskId, data.c_str());
-    //             } else if (command.startsWith("g E")) {
-    //                 // Get average energy consumption at desk i
-    //                 float energy = calculateEnergy();
-    //                 Serial.printf("E %d %.2f\n", deskId, energy);
-    //             } else if (command.startsWith("g V")) {
-    //                 // Get average visibility error at desk i
-    //                 float visibilityError = calculateVisibilityError(reference);
-    //                 Serial.printf("V %d %.2f\n", deskId, visibilityError);
-    //             } else if (command.startsWith("g F")) {
-    //                 // Get average flicker error at desk i
-    //                 float flicker = calculateFlicker();
-    //                 Serial.printf("F %d %.2f\n", deskId, flicker); break;
-    //             } else if (command.startsWith("g O")) {
-    //                 // Get lower bound on illuminance for the occupied state
-    //                 Serial.printf("O %d %.2f\n", deskId, luminaires[deskId].occupied_lower_bound);
-    //             } else if (command.startsWith("g U")) {
-    //                 // Get lower bound on illuminance for the unoccupied state
-    //                 Serial.printf("U %d %.2f\n", deskId, luminaires[deskId].unoccupied_lower_bound);
-    //             } else if (command.startsWith("g L")) {
-    //                 // Get the current illuminance lower bound
-    //                 Serial.printf("L %d %.2f\n", deskId, luminaires[deskId].current_lower_bound);
-    //             } else if (command.startsWith("g C")) {
-    //                 // Get the current energy cost
-    //                 Serial.printf("C %d %.2f\n", deskId, luminaires[deskId].energy_cost);
-    //             }
-    //             break;
-    //             }
-    //         case 'O': {
-    //             // Set lower bound on illuminance for the occupied state
-    //             if (sscanf(command.c_str(), "O %d %f", &deskId, &val) == 2) {
-    //                 luminaires[deskId].occupied_lower_bound = val;
-    //                 Serial.println("ack");
-    //             } else {
-    //                 Serial.println("err");
-    //             }
-    //             break;
-    //         }
-    //         case 'U': {
-    //             // Set lower bound on illuminance for the unoccupied state
-    //             if (sscanf(command.c_str(), "U %d %f", &deskId, &val) == 2) {
-    //                 luminaires[deskId].unoccupied_lower_bound = val;
-    //                 Serial.println("ack");
-    //             } else {
-    //                 Serial.println("err");
-    //             }
-    //             break;
-    //         }
-    //         case 'C': {
-    //             // Set the current energy cost
-    //             if (sscanf(command.c_str(), "C %d %f", &deskId, &val) == 2) {
-    //                 luminaires[deskId].energy_cost = val;
-    //                 Serial.println("ack");
-    //             } else {
-    //                 Serial.println("err");
-    //             }
-    //             break;
-    //         }
-    //         case 'R': {
-    //             // Restart the system
-    //             initializeLuminaires(MAX_DESKS);
-    //             Serial.println("ack");
-    //             break;
-    //         }
-    //             default: {
-    //                 Serial.println("err");
-    //                 break;
-    //             }
-    //         }
-    //     }
-    // }
-

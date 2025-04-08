@@ -40,6 +40,8 @@ class MCP2515;
 #define COMMAND_gC 0x27
 #define COMMAND_C 0x28
 #define COMMAND_R 0x29
+#define COMMAND_ga 0x30
+
 
 
 
@@ -98,18 +100,18 @@ void handleCommand(struct can_frame command, int* node_ids, int int_node_address
 void setDutyCycle(int deskId, int val , int* node_ids, int int_node_address);
 void getDutyCycle(int deskId , int* node_ids, int int_node_address, MCP2515& can0);
 void setIlluminanceRef(int deskId, int val , int* node_ids, int int_node_address);
-void getIlluminanceRef(int deskId, int* node_ids, int int_node_address);
-void measureIlluminanceCommand(int deskId, int* node_ids, int int_node_address);
+void getIlluminanceRef(int deskId, int* node_ids, int int_node_address, MCP2515& can0);
+void measureIlluminanceCommand(int deskId, int* node_ids, int int_node_address, MCP2515& can0);
 void setOccupancyState(int deskId, int val, int* node_ids, int int_node_address);
-void getOccupancyState(int firstValue, int* node_ids,int int_node_address);
+void getOccupancyState(int firstValue, int* node_ids,int int_node_address, MCP2515& can0);
 void setAntiWindupOnOff(int deskId, int val, int* node_ids, int int_node_address);
 void setFeebackOnOff(int deskId, int val, int* node_ids, int int_node_address) ;
-void getExternalIlluminance(int deskId,int* node_ids, int int_node_address) ;
-void getFeeback(int deskId,int* node_ids, int int_node_address);
+void getExternalIlluminance(int deskId,int* node_ids, int int_node_address,  MCP2515& can0) ;
+void getFeeback(int deskId,int* node_ids, int int_node_address, MCP2515& can0);
 void getInstateniousPower(int deskId,int* node_ids, int int_node_address);
 void getElapsedTime(int deskId,int* node_ids, int int_node_address);
 int measureIlluminance();
-void measureLDRVoltage(int deskId, int* node_ids, int int_node_address);
+void measureLDRVoltage(int deskId, int* node_ids, int int_node_address, MCP2515& can0);
 void getEnergy();
 void getVisibilityError();
 void getFlicker();

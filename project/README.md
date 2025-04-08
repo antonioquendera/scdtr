@@ -51,3 +51,6 @@ the distributed control system.
 solutions to the project presented in the course that require communication between
 control nodes.
  
+**Commands :***
+
+- [ ] Mudar commands para ler só CAN e nada do serial. quandi hub recebe mensagem do serial, transformar para CAN e enviar para todos os outros nos

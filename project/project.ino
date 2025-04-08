@@ -277,7 +277,7 @@ void loop() {
         if(received_data == MSG_COMMAND){
             handleCommand(canMsgRx, node_ids.data(), int_node_address, can0);
         }
-        if(received_data == MSG_COMMAND_GET){
+        if(received_data == MSG_COMMAND_GET && hub_node){
             handleCommandGet(canMsgRx);
         }
         
@@ -352,7 +352,19 @@ void loop1() {
             float visibilityError = calculateVisibilityError(reference);
             float flicker = calculateFlicker();
 
+            float lux_from_LED = gains[0] * (sharedPwmValue / 4095.0); // Calculate illuminance from LED
+
+            luminaires[0].LDR_voltage = voltage;
             luminaires[0].power_consumption = energy;
+            luminaires[0].external_illuminance = sharedIlluminance;
+            luminaires[0].elapsed_time += millis() / 1000;  // Convert milliseconds to seconds
+            luminaires[0].duty_cycle = sharedPwmValue / 4095.0;  // Normalize to [0, 1]S
+            luminaires[0].illuminance_ref = reference;
+            luminaires[0].measured_illuminance = sharedIlluminance;
+            luminaires[0].buffer_u.push_back(sharedPwmValue / 4095.0);  // Store duty cycle in buffer
+            luminaires[0].buffer_y.push_back((float)sharedIlluminance);  // Store illuminance in buffer
+            luminaires[0].external_illuminance = sharedIlluminance-lux_from_LED;  // Store external illuminance
+
 
             newDataAvailable = true;  // Flag to indicate new data
 
