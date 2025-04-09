@@ -97,8 +97,8 @@ struct Luminaire {
 #define ANALOG_PIN 26      // Analog input pin
 #define LED_PWM_PIN 15     // PWM pin for LED control
 #define BUFFER_SIZE 600    // Stores last minute of data at 100Hz
-#define OCCUPIED 50
-#define UNNOCUPIED 15
+#define OCCUPIED 70.0
+#define UNNOCUPIED 30.0
 #define MAX_DESKS 1  // Adjust this based on your system's configuration
 
 // Só declare como extern, SEM constexpr aqui

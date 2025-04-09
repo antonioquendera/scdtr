@@ -11,12 +11,6 @@
 // Constants and Parameters
 
 
-// ADMM parameters (tunable)
-float admm_rho = 0.1;               // The penalty parameter for ADMM
-float admm_x_local = 0.0;           // Local update variable (result of local optimization)
-float admm_u_local = 0.0;           // Local dual variable
-float admm_z_global = reference;    // Global consensus variable (initialized to the reference)
-
 // PID parameters
 float h = h_std;
 float K = K_std;
@@ -26,7 +20,19 @@ float Td = Td_std;
 float N = N_std;
 float Tt = Tt_std;
 
-const unsigned long ADMM_TIMEOUT = 50;  // Adjust as needed
+// ADMM parameters (tunable)
+float admm_rho = 0.6;               // The penalty parameter for ADMM
+float alpha = 0.3;                  // Energy weighting factor
+float admm_x_local = 0.0;           // Local update variable (result of local optimization)
+float admm_u_local = 0.0;           // Local dual variable
+float admm_z_global = reference;    // Global consensus variable (initialized to the reference)
+
+// how often the ADMM runs (ms)
+const unsigned long ADMM_TIMEOUT = 200;      // CAN message wait time in ms
+static unsigned long lastAdmmTime = 0;
+const unsigned long ADMM_RUN_PERIOD = 3000; // 1 second, can be tuned
+
+float best_u_local = 0.0;
 
 
 
@@ -35,7 +41,7 @@ const int R = 10000;            // 10kΩ resistor
 const int R_0 = 250000;        // LDR resistance at 1 LUX
 const float b = 6.1;     // Calibration constant
 const float m = - 0.8;            // Nominal value for LUX calculation
-float reference = 30;           // Reference value for PID
+float reference = 200;           // Reference value for PID
 float u_old;                    // Old value for PID calculations
 std::map<int, Luminaire> luminaires;
 
@@ -96,12 +102,12 @@ int num_cycles = 0; // Number of cycles for the PID controller
 
 bool receiving_buffer = false; // Flag to indicate if the buffer is being received
 
-int totalEnergy = 0; // Total energy consumption
-int totalVisibilityError = 0; // Total visibility error
-int totalFlicker = 0; // Total flicker
-int avgEnergy = 0; // Average energy consumption
-int avgVisibilityError = 0; // Average visibility error
-int avgFlicker = 0; // Average flicker
+float totalEnergy = 0; // Total energy consumption
+float totalVisibilityError = 0; // Total visibility error
+float totalFlicker = 0; // Total flicker
+float avgEnergy = 0; // Average energy consumption
+float avgVisibilityError = 0; // Average visibility error
+float avgFlicker = 0; // Average flicker
 
 
 
@@ -289,36 +295,20 @@ void loop() {
     }
 
     // CAN message receiving
-    while (can0.readMessage(&canMsgRx) == MCP2515::ERROR_OK) {
+    while (can0.readMessage(&canMsgRx) == MCP2515::ERROR_OK && canMsgRx.data[0] != MSG_ADMM_SUM) {
+        
         if(receiving_buffer == true && hub_node && !(canMsgRx.can_dlc == 1 && canMsgRx.data[0] == MSG_BUFFER_END)){
-            if(canMsgRx.can_dlc >= 2){
-                int16_t firstValue = canMsgRx.data[0] | (canMsgRx.data[1] << 8);
-                Serial.printf("%d, \n", firstValue);
-            }
-            if(canMsgRx.can_dlc >= 4){
-                int16_t secondValue = canMsgRx.data[2] | (canMsgRx.data[3] << 8);
-                Serial.printf("%d,\n", secondValue);
-            }
-            if(canMsgRx.can_dlc >= 6){
-                int16_t thirdValue = canMsgRx.data[4] | (canMsgRx.data[5] << 8);
-                Serial.printf("%d,\n", thirdValue);
-            }
-            if(canMsgRx.can_dlc >= 8){
-                int16_t fourthValue = canMsgRx.data[6] | (canMsgRx.data[7] << 8);
-                Serial.printf("%d,\n", fourthValue);
-            }
+            int16_t firstValue = canMsgRx.data[0] | (canMsgRx.data[1] << 8);
+            Serial.printf("%d, ", firstValue);
             continue;
         }
+    
         receiving_buffer = false;
         
         lastMessageTime = currentTime;
         int int_sender_id = canMsgRx.can_id;
         uint8_t received_data = canMsgRx.data[0];
-        Serial.print("Message:");
-        Serial.print(received_data);
-        Serial.print(" from node: ");
-        Serial.println(int_sender_id);
-
+  
         if(!calibrationDone){ //If calibration has not completed
             
             if(addUniqueNodeId(int_sender_id)){//If a message is received from a new node, add it to the list and skip loop iteration
@@ -405,17 +395,23 @@ void loop1() {
             float voltage = (adcValue / 4095.0) * Vcc;
             sharedIlluminance = Luxmeter(voltage);
             
-            admmIterationDecentralized();
+            if (millis() - lastAdmmTime > ADMM_RUN_PERIOD) {
+                // ADMM determines the best duty cycle globally
+                admmIterationUpdateReference(can0);  // sets 'reference' in LUX
+                lastAdmmTime = millis();
+            }
 
-            sharedPwmValue = (int)admm_x_local;
-            sharedPwmValue = constrain(sharedPwmValue, 0, 4095);
+           // The PID does the local real-time control
+           //Serial.printf("reference: %.2f//", reference);
+            float pid_output = my_pid.compute_control(reference, sharedIlluminance);
+            sharedPwmValue   = constrain(pid_output, 0, 4095);
             analogWrite(LED_PWM_PIN, sharedPwmValue);
 
             // Perform housekeeping on PID controller
             u_old = my_pid.housekeep(reference, sharedIlluminance, sharedPwmValue);
 
             // Store duty cycle and illuminance in CircularBuffer
-            dutyCycleBuffer.push(sharedPwmValue / 4095.0);
+            dutyCycleBuffer.push(sharedPwmValue / 40.950);
             illuminanceBuffer.push(sharedIlluminance);
 
 
@@ -427,35 +423,47 @@ void loop1() {
             totalVisibilityError += visibilityError;
             totalFlicker += flicker;
             avgEnergy = totalEnergy / num_cycles;
+            //Serial.printf("avg energy %.2f\n", avgEnergy);
             avgVisibilityError = totalVisibilityError / num_cycles;
             avgFlicker = totalFlicker / num_cycles;
 
-            float lux_from_LED = gains[0] * (sharedPwmValue / 4095.0); // Calculate illuminance from LED
+            float lux_from_LED = gains[0] * (sharedPwmValue / 4095); // Calculate illuminance from LED
 
             luminaires[0].LDR_voltage = voltage;
             luminaires[0].power_consumption = energy;
             luminaires[0].flicker_error = flicker; 
             luminaires[0].visibility_error = visibilityError; 
-            //luminaires[0].external_illuminance = sharedIlluminance;
             luminaires[0].elapsed_time = currentTime/1000;  // Convert milliseconds to seconds
-            luminaires[0].duty_cycle = sharedPwmValue / 4095.0;  // Normalize to [0, 1]S
+            luminaires[0].duty_cycle = sharedPwmValue / 40.95;  // Normalize to [0, 1]S
             luminaires[0].illuminance_ref = reference;
             luminaires[0].measured_illuminance = sharedIlluminance;
-            luminaires[0].buffer_u.push_back(sharedPwmValue / 4095.0);  // Store duty cycle in buffer
+            luminaires[0].buffer_u.push_back(sharedPwmValue / 40.950);  // Store duty cycle in buffer
             luminaires[0].buffer_y.push_back((float)sharedIlluminance);  // Store illuminance in buffer
-            luminaires[0].external_illuminance = sharedIlluminance-lux_from_LED;  // Store external illuminance
+            if(sharedIlluminance-lux_from_LED > 0){
+                luminaires[0].external_illuminance = sharedIlluminance-lux_from_LED;  // Store external illuminance
+            }
+            else{
+                luminaires[0].external_illuminance = 0;  // Store external illuminance
+            }
+            
             luminaires[0].avg_energy = avgEnergy;  // Store average energy consumption
             luminaires[0].avg_visibility_error = avgVisibilityError;  // Store average visibility error
             luminaires[0].avg_flicker = avgFlicker;  // Store average flicker
 
             if(streamDutyCycle && hub_node){
-                Serial.printf("s u %d %.2f %d\n", int_node_address, luminaires[0].duty_cycle, (int)luminaires[0].elapsed_time);
+                Serial.printf("s u 2 %.2f %d\n", luminaires[0].duty_cycle, (int)luminaires[0].elapsed_time);
             }
             if(streamDutyCycle && !hub_node){
                 int value = luminaires[0].duty_cycle; // Placeholder for duty cycle
                 int elapsed_time_conv = (int)luminaires[0].elapsed_time;
-                uint8_t lowByte1 = int_node_address & 0xFF;
-                uint8_t highByte1 = (int_node_address >> 8) & 0xFF;
+                int deskId = 0;
+                for(int i = 0; i < 2; i++){
+                    if (node_ids[i] == int_node_address){
+                        deskId = i;
+                    }
+                }
+                uint8_t lowByte1 = deskId & 0xFF;
+                uint8_t highByte1 = (deskId>> 8) & 0xFF;
                 uint8_t lowByte = value & 0xFF;
                 uint8_t highByte = (value >> 8) & 0xFF;
                 uint8_t lowByte2 = elapsed_time_conv & 0xFF;
@@ -476,14 +484,20 @@ void loop1() {
             }
             
             if(streamIlluminance && hub_node){
-                Serial.printf("s y %d %.2f %d\n", int_node_address, luminaires[0].measured_illuminance, (int)luminaires[0].elapsed_time);
+                Serial.printf("s y 2 %.2f %d\n", luminaires[0].measured_illuminance, (int)luminaires[0].elapsed_time);
             }
             if(streamIlluminance && !hub_node){
                 
                 int value = luminaires[0].measured_illuminance; 
                 int elapsed_time_conv = (int)luminaires[0].elapsed_time;
-                uint8_t lowByte1 = int_node_address & 0xFF;
-                uint8_t highByte1 = (int_node_address >> 8) & 0xFF;
+                int deskId = 0;
+                for(int i = 0; i < 2; i++){
+                    if (node_ids[i] == int_node_address){
+                        deskId = i;
+                    }
+                }
+                uint8_t lowByte1 = deskId & 0xFF;
+                uint8_t highByte1 = (deskId>> 8) & 0xFF;
                 uint8_t lowByte = value & 0xFF;
                 uint8_t highByte = (value >> 8) & 0xFF;
                 uint8_t lowByte2 = elapsed_time_conv & 0xFF;
@@ -543,53 +557,95 @@ void loop1() {
 }
 
 
-void admmIterationDecentralized() {
-    // 1. Local Update
-    // Get the PID output (unconstrained optimum based on local sensor reading)
-    float pid_output = my_pid.compute_control(reference, sharedIlluminance);
-    // Local update: x_i = (pid_output + rho * (z - u)) / (1 + rho)
-    admm_x_local = luminaires[0].avg_energy + ( admm_rho/2 )* ((admm_x_local + admm_z_global - admm_u_local))**2;
-    
-    // Compute the local value that we will share: x_i + u_i
-    float localSum = admm_x_local + admm_u_local;
-    // Scale the float (e.g., multiply by 100) to encode it into a 16-bit integer
-    int16_t scaledSum = (int16_t)(localSum * 100);
-    
-    // 2. Broadcast Local Value
-    can_frame admmMsg;
-    admmMsg.can_id = int_node_address;   // Use this node's address as ID; in a decentralized setting, this can be used to identify the sender
-    admmMsg.can_dlc = 3;
-    admmMsg.data[0] = MSG_ADMM_SUM;        // Message identifier for ADMM data
-    admmMsg.data[1] = scaledSum & 0xFF;      // Lower 8 bits of the scaled value
-    admmMsg.data[2] = (scaledSum >> 8) & 0xFF; // Upper 8 bits
-    can0.sendMessage(&admmMsg);
-    
-    // 3. Collect Peer Values for a fixed time window (ADMM_TIMEOUT ms)
-    std::vector<float> receivedValues;
-    // Include our own value
-    receivedValues.push_back(localSum);
-    
-    unsigned long startTime = millis();
-    while (millis() - startTime < ADMM_TIMEOUT) {
-        can_frame rxMsg;
-        if (can0.readMessage(&rxMsg) == MCP2515::ERROR_OK) {
-            // Check that this is an ADMM_SUM message
-            if (rxMsg.data[0] == MSG_ADMM_SUM) {
-                // Decode the value
-                int16_t peerScaled = rxMsg.data[1] | (rxMsg.data[2] << 8);
-                float peerValue = peerScaled / 100.0;
-                receivedValues.push_back(peerValue);
-            }
+float energy_cons(float duty_cycle) {
+    return alpha * duty_cycle * duty_cycle;
+}
+
+
+void admmIterationUpdateReference(MCP2515& can0) {
+    float G_i;
+    for(int i=0; i<calibrationCount; i++){
+        if(node_ids[i] == int_node_address){
+            G_i = gains[i];
         }
     }
-    
-    // 4. Global Update: compute the new consensus z (average of all values)
-    float sum = 0.0;
-    for (float val : receivedValues) {
-        sum += val;
+    float y_bg_i= luminaires[0].external_illuminance;
+    float y_min = luminaires[0].unoccupied_lower_bound; //default
+
+    // constraints
+    if (luminaires[0].occupied) {
+        y_min = luminaires[0].occupied_lower_bound;
     }
-    admm_z_global = sum / receivedValues.size();
-    
-    // 5. Dual Update: update the dual variable for this node
-    admm_u_local = admm_u_local + admm_x_local - admm_z_global;
+    else {
+        y_min = luminaires[0].unoccupied_lower_bound;
+    }
+    float y_max = luminaires[0].illuminance_ref;
+
+    float best_u = 0.0f;
+    float min_cost = INFINITY;
+
+    // localTerm means we consider 'z_global - u_local' as the central guess
+    float localTerm = (admm_z_global - admm_u_local);
+
+    // we sweep duty cycle from 0..1 in 0.01 steps
+    for (float u_test = 0.0f; u_test <= 1.0f; u_test += 0.01f) {
+        float illum_test = G_i * u_test + y_bg_i;
+
+        // check feasibility
+        if (illum_test < y_min || illum_test > y_max) 
+            continue;
+
+        //cost function (alpha*x_i^2 + rho/2*(x_i - [z^k - u_i^k] )^2)
+        float cost = energy_cons(u_test) + 0.5f* admm_rho * pow((u_test - localTerm),2);
+
+        if(cost < min_cost) {
+            min_cost = cost;
+            best_u   = u_test;
+        }
+    }
+
+    // store best local duty cycle
+    best_u_local = best_u;
+
+    // broadcast best_u_local + u_local
+    float localSum = (best_u_local + admm_u_local);
+    int16_t scaledSum = (int16_t)(localSum*100);
+
+    struct can_frame canMsgTx;
+
+    canMsgTx.can_id  = int_node_address;
+    canMsgTx.can_dlc = 3;
+    canMsgTx.data[0] = MSG_ADMM_SUM;
+    canMsgTx.data[1] = scaledSum & 0xFF;
+    canMsgTx.data[2] = (scaledSum >> 8) & 0xFF;
+    can0.sendMessage(&canMsgTx);
+
+    // gather peer values 
+    std::vector<float> allVals;
+    allVals.push_back(localSum);
+
+    unsigned long startTime = millis();
+    while((millis()-startTime) < ADMM_TIMEOUT) {
+        can_frame rxMsg;
+        if(can0.readMessage(&rxMsg) == MCP2515::ERROR_OK && rxMsg.data[0] == MSG_ADMM_SUM) 
+        {
+            Serial.print(".");
+           int16_t peerScaled = rxMsg.data[1] | (rxMsg.data[2]<<8);
+           float peerVal = peerScaled/100.0f;
+           allVals.push_back(peerVal);
+        }
+    }
+
+    // consensus
+    float sum=0.0f;
+    for(float v: allVals) sum+=v;
+    admm_z_global = sum / allVals.size();
+
+    // dual update
+    admm_u_local += (best_u_local - admm_z_global);
+
+
+    float best_duty = best_u_local; //for local choice : best_u_local for consensus : admn_z_global
+    Serial.printf("gi: %.2f , bestd :%.2f, ybg: %.2f\n", G_i, best_duty, y_bg_i);
+    reference = G_i * best_duty + y_bg_i;
 }
