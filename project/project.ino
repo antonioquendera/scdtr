@@ -32,9 +32,9 @@ const unsigned long ADMM_TIMEOUT = 50;  // Adjust as needed
 
 const float Vcc = 3.3;          // Supply voltage
 const int R = 10000;            // 10kΩ resistor
-const int R_0 = 1100000;        // LDR resistance at 1 LUX
-const float b = log10(R_0);     // Calibration constant
-const float m = 0.8;            // Nominal value for LUX calculation
+const int R_0 = 250000;        // LDR resistance at 1 LUX
+const float b = 6.1;     // Calibration constant
+const float m = - 0.8;            // Nominal value for LUX calculation
 float reference = 30;           // Reference value for PID
 float u_old;                    // Old value for PID calculations
 std::map<int, Luminaire> luminaires;
@@ -58,7 +58,7 @@ int circular_buffer = 1;                            // Flag to indicate buffer s
 
 // Time Management
 unsigned long previousTime = 0;                // Last time an operation was performed
-unsigned long sampInterval = 1000;              // Sampling interval in milliseconds
+unsigned long sampInterval = 10000;              // Sampling interval in microseconds (10ms)
 unsigned long lastMessageTime = 0;              // Time of last received CAN message
 const unsigned long timeout = 2000;             // Timeout for waiting for new CAN message (2 seconds)
 
@@ -138,7 +138,7 @@ float performCalibration(int deskId) {
     int n = 11;
 
     for (int i = 0; i < n; i++) {
-        float x = dutyCycles[i];
+        float x = dutyCycles[i]/100;
         float y = illuminanceValues[i];
 
         sumX += x;
@@ -309,6 +309,8 @@ void loop() {
             }
             continue;
         }
+        receiving_buffer = false;
+        
         lastMessageTime = currentTime;
         int int_sender_id = canMsgRx.can_id;
         uint8_t received_data = canMsgRx.data[0];
@@ -383,7 +385,6 @@ void loop() {
         }
     }
 
-    previousTime = currentTime;
 }
 
 // This function runs on Core 1
@@ -398,7 +399,6 @@ void loop1() {
         //Serial.println("loop1 running...");
         unsigned long currentTime = micros();  // Current time in microseconds
         num_cycles++;
-
         // Check if the required interval has passed
         if (currentTime - previousTime > sampInterval) {
             int adcValue = analogRead(ANALOG_PIN);
@@ -418,8 +418,6 @@ void loop1() {
             dutyCycleBuffer.push(sharedPwmValue / 4095.0);
             illuminanceBuffer.push(sharedIlluminance);
 
-            
-           
 
             // Print metrics
             float energy = calculateEnergy();
@@ -549,9 +547,8 @@ void admmIterationDecentralized() {
     // 1. Local Update
     // Get the PID output (unconstrained optimum based on local sensor reading)
     float pid_output = my_pid.compute_control(reference, sharedIlluminance);
-    Serial.printf("PID Output: %.2f\n", pid_output);
     // Local update: x_i = (pid_output + rho * (z - u)) / (1 + rho)
-    admm_x_local = (pid_output + admm_rho * (admm_z_global - admm_u_local)) / (1.0 + admm_rho);
+    admm_x_local = luminaires[0].avg_energy + ( admm_rho/2 )* ((admm_x_local + admm_z_global - admm_u_local))**2;
     
     // Compute the local value that we will share: x_i + u_i
     float localSum = admm_x_local + admm_u_local;
@@ -595,6 +592,4 @@ void admmIterationDecentralized() {
     
     // 5. Dual Update: update the dual variable for this node
     admm_u_local = admm_u_local + admm_x_local - admm_z_global;
-
-    Serial.printf("ADMM Iteration: x_local=%.2f, z_global=%.2f, u_local=%.2f\n", admm_x_local, admm_z_global, admm_u_local);
 }

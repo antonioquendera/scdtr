@@ -1128,7 +1128,8 @@ void getFlicker() {
 float Luxmeter(float V) {
     if (V <= 0 || V >= Vcc) return 0;
     float R_ldr = (Vcc - V) * R / V;
-    float log_LUX = (b - log10(R_ldr)) / m;
+    float log_LUX = (log10(R_ldr)-b) / m;
+    float LUX = pow(10, log_LUX);
     return pow(10, log_LUX);
 }
 
