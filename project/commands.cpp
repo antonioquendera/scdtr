@@ -13,15 +13,23 @@ extern bool streamIlluminance; // Flag to indicate if illuminance streaming is e
 extern int timeStreamU; // Time for duty cycle streaming
 extern int timeStreamY; // Time for illuminance streaming
 
+extern pid my_pid;
+
+constexpr int bufferSize = 6000;  // definição real
+CircularBuffer<float, bufferSize> dutyCycleBuffer;
 extern CircularBuffer<float, bufferSize> dutyCycleBuffer;      // Circular buffer for duty cycle data
-extern CircularBuffer<float, bufferSize> illuminanceBuffer;
+CircularBuffer<float, bufferSize> illuminanceBuffer;
+extern CircularBuffer<float, bufferSize> illuminanceBuffer; // Circular buffer for illuminance data
 extern std::map<int, Luminaire> luminaires; // Map to store luminaires
 extern int int_node_address; // Unique ID for this node
 extern int deskId; // Desk ID for the system
 extern int node_ids[100]; // List of node IDs (CAN IDs)
 extern bool hub_node; // Flag to indicate if this is the hub node
-extern bool stream_y = false;                  //Flag to set illuminance stream on or off
-extern bool stream_u = false;                  //Flag to set duty cycle stream on or off
+
+extern bool receiving_buffer;
+
+// PID parameters
+extern float Tt;
 
 
 
@@ -88,6 +96,24 @@ void handleCommandGet(struct can_frame command) {
     Serial.println(aux);
 
     switch (command.data[1]) {
+
+        case COMMAND_gbu_start:
+            Serial.printf("b u %d\n", firstValue);
+            receiving_buffer = true; // Set the flag to indicate that we are receiving data
+            break;
+        
+        case COMMAND_gbu_end:
+
+            break;
+        
+            case COMMAND_gby_start:
+
+            break;
+        
+        case COMMAND_gby_end:
+
+            break;
+
         case COMMAND_gu:
             Serial.print("u");
             Serial.print(" ");
@@ -439,7 +465,7 @@ void getOccupancyState(int deskId, int* node_ids, int int_node_address, MCP2515&
     
     struct can_frame canMsgTx;
 
-    if(hub_node == false && node_ids[deskId] == int_node_address){//im not the hub soo i need to send the message for him to Serial.print()
+    if(hub_node == false && node_ids    [deskId] == int_node_address){//im not the hub soo i need to send the message for him to Serial.print()
             int value = luminaires[0].occupied ? 1 : 0;
             
             uint8_t lowByte1 = deskId & 0xFF;
@@ -464,11 +490,17 @@ void getOccupancyState(int deskId, int* node_ids, int int_node_address, MCP2515&
     }
 
 }
+
 void setOccupancyState(int deskId, int val, int* node_ids, int int_node_address, MCP2515& can0){
     struct can_frame canMsgTx;
 
     if(node_ids[deskId] == int_node_address) {//if it is requesting my info.
         luminaires[0].occupied = (val != 0);
+        if(val == 1){
+            reference = OCCUPIED;
+        }else if(val == 0){
+            reference = UNNOCUPIED;
+        }
     }
     
     if(hub_node == false && node_ids[deskId] == int_node_address){//im not the hub soo i need to send the message for him to Serial.print()
@@ -490,7 +522,13 @@ void setAntiWindupOnOff(int deskId, int val, int* node_ids, int int_node_address
 
     if(node_ids[deskId] == int_node_address) {//if it is requesting my info.
         luminaires[0].anti_windup = (val != 0);
-        //Serial.println("ack");
+        if (luminaires[0].anti_windup == true) {
+            Tt = Tt_std;
+        }
+        else {
+            Tt = 1e9;
+        }
+        
     }
     if(hub_node == false && node_ids[deskId] == int_node_address){//im not the hub soo i need to send the message for him to Serial.print()
 
@@ -511,7 +549,9 @@ void setFeebackOnOff(int deskId, int val, int* node_ids, int int_node_address, M
 
     if(node_ids[deskId] == int_node_address) {//if it is requesting my info.
         luminaires[0].feedback_control = (val != 0);
-        //Serial.println("ack");
+        my_pid.setFeedbackEnabled(val != 0);
+
+        
     }
     if(hub_node == false && node_ids[deskId] == int_node_address){//im not the hub soo i need to send the message for him to Serial.print()
 
@@ -526,6 +566,7 @@ void setFeebackOnOff(int deskId, int val, int* node_ids, int int_node_address, M
         
     }
 }
+
 void getFeeback(int deskId,int* node_ids, int int_node_address, MCP2515& can0) {
 
     struct can_frame canMsgTx;
@@ -554,6 +595,7 @@ void getFeeback(int deskId,int* node_ids, int int_node_address, MCP2515& can0) {
         
     }
 }
+
 void getExternalIlluminance(int deskId,int* node_ids, int int_node_address, MCP2515& can0) {
     
     struct can_frame canMsgTx;
@@ -582,6 +624,7 @@ void getExternalIlluminance(int deskId,int* node_ids, int int_node_address, MCP2
         
     }
 }
+
 void getInstateniousPower(int deskId,int* node_ids, int int_node_address, MCP2515& can0) {
 
     struct can_frame canMsgTx;
@@ -641,6 +684,7 @@ void getAntiWindup(int deskId, int* node_ids, int int_node_address, MCP2515& can
         
     }
 }
+
 void getElapsedTime(int deskId,int* node_ids, int int_node_address, MCP2515& can0) {
     struct can_frame canMsgTx;
 
@@ -674,6 +718,172 @@ void getElapsedTime(int deskId,int* node_ids, int int_node_address, MCP2515& can
 // Function to get buffer data
 void getBuffer(char x, int deskId, int* node_ids, int int_node_address, MCP2515& can0) {
 
+    struct can_frame canMsgTx;
+    uint8_t deskid1 = deskId & 0xFF;
+    uint8_t deskid2 = (deskId >> 8) & 0xFF;
+    uint8_t lowByte1;
+    uint8_t lowByte2;
+    uint8_t lowByte3;
+    uint8_t highByte1;
+    uint8_t highByte2;
+    uint8_t highByte3;
+    bool valid1 = false;
+    bool valid2 = false;
+    bool valid3 = false;
+    int size = 0;
+
+    if(hub_node == false && node_ids[deskId] == int_node_address){//im not the hub soo i need to send the message for him to Serial.print()
+        int value = 0;
+
+        if (x == 'y') {
+
+            size = illuminanceBuffer.size();
+            const CircularBuffer<float, bufferSize>& buffery = illuminanceBuffer;
+
+            canMsgTx.can_id = int_node_address;
+            canMsgTx.can_dlc = 4;
+            canMsgTx.data[0] = MSG_COMMAND_GET;
+            canMsgTx.data[1] = COMMAND_gby_start;
+            canMsgTx.data[2] = deskid1;//desk id
+            canMsgTx.data[3] = deskid2;
+            can0.sendMessage(&canMsgTx);
+
+            for(int i = 0; i < size; i++){
+                value = buffery[i];
+                uint8_t lowByte = value & 0xFF;
+                uint8_t highByte = (value >> 8) & 0xFF;if(canMsgTx.can_dlc >= 2){
+                    int16_t firstValue = canMsgTx.data[0] | (canMsgTx.data[1] << 8);
+                    Serial.printf("%d\n", firstValue);
+                }
+
+                if(i != buffery.size()-1){
+                    int value1 = (int)buffery[++i];
+                    uint8_t lowByte1 = value1 & 0xFF;
+                    uint8_t highByte1 = (value1 >> 8) & 0xFF;
+                    valid1 = true;
+                }
+                if(i != buffery.size()-1){
+                    int value2 = (int)buffery[++i];
+                    uint8_t lowByte2 = value2 & 0xFF;
+                    uint8_t highByte2 = (value2 >> 8) & 0xFF;
+                    valid2 = true;
+                }
+                if(i != buffery.size()-1){
+                    int value3 = (int)buffery[++i];
+                    uint8_t lowByte3 = value3 & 0xFF;
+                    uint8_t highByte3 = (value3 >> 8) & 0xFF;
+                    valid3 = true;
+                }
+
+                canMsgTx.can_id = int_node_address;
+                canMsgTx.can_dlc = 2;
+                canMsgTx.data[0] = lowByte;
+                canMsgTx.data[1] = highByte;
+
+                if(valid1){
+                    canMsgTx.data[2] = lowByte1;
+                    canMsgTx.data[3] = highByte1;
+                    canMsgTx.can_dlc = 4;
+                }
+                if(valid2){
+                    canMsgTx.data[4] = lowByte2;
+                    canMsgTx.data[5] = highByte2;
+                    canMsgTx.can_dlc = 6;
+                    
+                }
+                if(valid3){
+                    canMsgTx.data[6] = lowByte3;
+                    canMsgTx.data[7] = highByte3;
+                    canMsgTx.can_dlc = 8;
+                }
+                
+                can0.sendMessage(&canMsgTx);
+                valid1 = false;
+                valid2 = false;
+                valid3 = false;
+                
+            }  
+            canMsgTx.can_id = int_node_address;
+            canMsgTx.can_dlc = 1;
+            canMsgTx.data[0] = MSG_BUFFER_END;    
+            can0.sendMessage(&canMsgTx);
+        
+        }
+        else if (x == 'u') {
+            size = dutyCycleBuffer.size();
+            const CircularBuffer<float, bufferSize>& bufferu = dutyCycleBuffer;
+
+
+            canMsgTx.can_id = int_node_address;
+            canMsgTx.can_dlc = 4;
+            canMsgTx.data[0] = MSG_COMMAND_GET;
+            canMsgTx.data[1] = COMMAND_gbu_start;
+            canMsgTx.data[2] = deskid1;//desk id
+            canMsgTx.data[3] = deskid2;
+            can0.sendMessage(&canMsgTx);
+        
+            for(int i = 0; i < size; i++){
+                value = bufferu[i];
+                uint8_t lowByte = value & 0xFF;
+                uint8_t highByte = (value >> 8) & 0xFF;if(canMsgTx.can_dlc >= 2){
+                    int16_t firstValue = canMsgTx.data[0] | (canMsgTx.data[1] << 8);
+                    Serial.printf("%d\n", firstValue);
+                }
+
+                if(i != bufferu.size()-1){
+                    int value1 = (int)bufferu[++i];
+                    uint8_t lowByte1 = value1 & 0xFF;
+                    uint8_t highByte1 = (value1 >> 8) & 0xFF;
+                    valid1 = true;
+                }
+                if(i != bufferu.size()-1){
+                    int value2 = (int)bufferu[++i];
+                    uint8_t lowByte2 = value2 & 0xFF;
+                    uint8_t highByte2 = (value2 >> 8) & 0xFF;
+                    valid2 = true;
+                }
+                if(i != bufferu.size()-1){
+                    int value3 = (int)bufferu[++i];
+                    uint8_t lowByte3 = value3 & 0xFF;
+                    uint8_t highByte3 = (value3 >> 8) & 0xFF;
+                    valid3 = true;
+                }
+
+                canMsgTx.can_id = int_node_address;
+                canMsgTx.can_dlc = 2;
+                canMsgTx.data[0] = lowByte;
+                canMsgTx.data[1] = highByte;
+
+                if(valid1){
+                    canMsgTx.data[2] = lowByte1;
+                    canMsgTx.data[3] = highByte1;
+                    canMsgTx.can_dlc = 4;
+                }
+                if(valid2){
+                    canMsgTx.data[4] = lowByte2;
+                    canMsgTx.data[5] = highByte2;
+                    canMsgTx.can_dlc = 6;
+                    
+                }
+                if(valid3){
+                    canMsgTx.data[6] = lowByte3;
+                    canMsgTx.data[7] = highByte3;
+                    canMsgTx.can_dlc = 8;
+                }
+                
+                can0.sendMessage(&canMsgTx);
+                valid1 = false;
+                valid2 = false;
+                valid3 = false;
+                
+            }  
+            canMsgTx.can_id = int_node_address;
+            canMsgTx.can_dlc = 1;
+            canMsgTx.data[0] = MSG_BUFFER_END;    
+            can0.sendMessage(&canMsgTx);
+        }
+    }
+
     else if((hub_node == true) && (node_ids[deskId] == int_node_address) ) {//if im hub and the resquested node
     
         if (x == 'y') {
@@ -692,15 +902,11 @@ void getBuffer(char x, int deskId, int* node_ids, int int_node_address, MCP2515&
             for (int i = 0; i < dutyCycleBuffer.size(); i++) {
                 printf(" %.2f", illuminanceBuffer[i]);
                 if (i < dutyCycleBuffer.size() - 1) {
-                    data += ",";
+                    printf(",");
                 }
             }
         }
         
-        
-        
-        // Send buffer data
-        Serial.println(data);
     }
 }
 
@@ -933,7 +1139,7 @@ void calculateEnergyCommand(int deskId, int* node_ids, int int_node_address, MCP
 
     if(hub_node == false && node_ids[deskId] == int_node_address){//im not the hub soo i need to send the message for him to Serial.print()
 
-            int value = luminaires[0].power_consumption; // Placeholder for power consumption
+            int value = luminaires[0].avg_energy; // Placeholder for power consumption
             
             uint8_t lowByte1 = deskId & 0xFF;
             uint8_t highByte1 = (deskId >> 8) & 0xFF;
@@ -951,7 +1157,7 @@ void calculateEnergyCommand(int deskId, int* node_ids, int int_node_address, MCP
             can0.sendMessage(&canMsgTx);
         
     }else if((hub_node == true) && (node_ids[deskId] == int_node_address) ) {//if im hub and the resquested node
-            int value = luminaires[0].power_consumption; // Placeholder for power consumption
+            int value = luminaires[0].avg_energy; // Placeholder for power consumption
             Serial.printf("E %d %d\n", deskId, value);
         
     }
@@ -960,11 +1166,9 @@ void calculateEnergyCommand(int deskId, int* node_ids, int int_node_address, MCP
 // Function to calculate Energy (E)
 float calculateEnergy() {
     float energy = 0.0;
-    for (size_t i = 1; i < dutyCycleBuffer.size(); i++) {
-        float dutyCycle = dutyCycleBuffer[i];
-        float deltaT = 0.01;  // Assuming a sampling period of 100Hz (0.01s)
-        energy += dutyCycle * deltaT * 3.3;  // Assume maximum power is 3.3V
-    }
+    energy += luminaires[0].duty_cycle * 0.01 * 3.3;
+    // Assume maximum power is 3.3V
+    
     return energy;
 }
 
@@ -973,7 +1177,7 @@ void calculateVisibilityErrorCommand(int deskId, int* node_ids, int int_node_add
 
     if(hub_node == false && node_ids[deskId] == int_node_address){//im not the hub soo i need to send the message for him to Serial.print()
 
-            int value = luminaires[0].visibility_error; // Placeholder for power consumption
+            int value = luminaires[0].avg_visibility_error; // Placeholder for power consumption
             
             uint8_t lowByte1 = deskId & 0xFF;
             uint8_t highByte1 = (deskId >> 8) & 0xFF;
@@ -991,21 +1195,20 @@ void calculateVisibilityErrorCommand(int deskId, int* node_ids, int int_node_add
             can0.sendMessage(&canMsgTx);
         
     }else if((hub_node == true) && (node_ids[deskId] == int_node_address) ) {//if im hub and the resquested node
-            int value = luminaires[0].visibility_error; // Placeholder for power consumption
+            int value = luminaires[0].avg_visibility_error; // Placeholder for power consumption
             Serial.printf("V %d %d\n", deskId, value);
         
     }
 }
+
 // Function to calculate Visibility Error (V)
 float calculateVisibilityError(float referenceLux) {
+    
     float visibilityError = 0.0;
-    for (size_t i = 0; i < illuminanceBuffer.size(); i++) {
-        float illuminance = illuminanceBuffer[i];
-        if (illuminance < referenceLux) {
-            visibilityError += referenceLux - illuminance;
-        }
-    }
-    return visibilityError / illuminanceBuffer.size();
+    visibilityError += referenceLux - illuminanceBuffer.last(); // Placeholder for illuminance
+
+       
+    return visibilityError;
 }
 
 // Function to calculate Flicker (F)
@@ -1014,7 +1217,7 @@ void calculateFlickerCommand(int deskId, int* node_ids, int int_node_address,  M
 
     if(hub_node == false && node_ids[deskId] == int_node_address){//im not the hub soo i need to send the message for him to Serial.print()
 
-        int value = luminaires[0].flicker_error; // Placeholder for power consumption
+        int value = luminaires[0].avg_flicker; // Placeholder for power consumption
         
         uint8_t lowByte1 = deskId & 0xFF;
         uint8_t highByte1 = (deskId >> 8) & 0xFF;
@@ -1032,7 +1235,7 @@ void calculateFlickerCommand(int deskId, int* node_ids, int int_node_address,  M
         can0.sendMessage(&canMsgTx);
         
     }else if((hub_node == true) && (node_ids[deskId] == int_node_address) ) {//if im hub and the resquested node
-        int value = luminaires[0].flicker_error; // Placeholder for power consumption
+        int value = luminaires[0].avg_flicker; // Placeholder for power consumption
         Serial.printf("V %d %d\n", deskId, value);
         
     }
@@ -1071,7 +1274,7 @@ void initializeLuminaires(int numLuminaires) {
             .visibility_error = 0.0,
             .elapsed_time = 0,
             .buffer_y = std::vector<float>(BUFFER_SIZE, 0.0),
-            .buffer_u = std::vector<float>(BUFFER_SIZE, 0.0)
+            .buffer_u = std::vector<float>(BUFFER_SIZE, 0.0),
             .avg_energy = 0.0,
             .avg_visibility_error = 0.0,
             .avg_flicker = 0.0,

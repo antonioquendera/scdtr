@@ -9,9 +9,22 @@
 #include "mcp2515.h"  // Include your CAN library
 #include "can.h"
 
+#define MSG_HELLO 0x01
+#define MSG_COMMAND 0x02
+#define MSG_CALIBRATE 0x03
 #define MSG_COMMAND_GET 0x04
+#define MSG_BUFFER_END 0x05
+#define MSG_ADMM_SUM 0x99
 class MCP2515;
 
+//PID Parameters
+#define h_std 0.01
+#define K_std 31.61
+#define b_std 1
+#define Ti_std 0.01
+#define Td_std 0
+#define N_std 10
+#define Tt_std 1
 
 
 #define COMMAND_u 0x01
@@ -28,8 +41,8 @@ class MCP2515;
 #define COMMAND_gd 0x12
 #define COMMAND_gp 0x13
 #define COMMAND_gt 0x14
-#define COMMAND_s 0x15
-#define COMMAND_S 0x16
+#define COMMAND_su 0x15
+#define COMMAND_Su 0x16
 #define COMMAND_gb 0x17
 #define COMMAND_gE 0x18
 #define COMMAND_gV 0x19
@@ -45,6 +58,13 @@ class MCP2515;
 #define COMMAND_ga 0x30
 #define ACK 0x31 // Acknowledge message
 #define ERR 0x32 // Negative acknowledge message
+#define COMMAND_sy 0x33 // Stop stream illuminance
+#define COMMAND_Sy 0x34 // Stop stream duty cycle
+#define COMMAND_gbu_start 0x35
+#define COMMAND_gbu_end 0x36
+#define COMMAND_gby_start 0x37
+#define COMMAND_gby_end 0x38
+
 
 
 
@@ -77,8 +97,13 @@ struct Luminaire {
 #define ANALOG_PIN 26      // Analog input pin
 #define LED_PWM_PIN 15     // PWM pin for LED control
 #define BUFFER_SIZE 600    // Stores last minute of data at 100Hz
-
+#define OCCUPIED 50
+#define UNNOCUPIED 15
 #define MAX_DESKS 1  // Adjust this based on your system's configuration
+
+// Só declare como extern, SEM constexpr aqui
+extern CircularBuffer<float, 6000> dutyCycleBuffer;
+extern CircularBuffer<float, 6000> illuminanceBuffer; // Circular buffer for illuminance data
 
 struct StreamData {
     bool isStreaming;
@@ -97,9 +122,6 @@ extern const float m;
 extern const int R;
 extern std::map<int, Luminaire> luminaires; // Global variable for luminaires
 
-constexpr size_t bufferSize = 2000;  // Ensure this is a compile-time constant
-extern CircularBuffer<float, bufferSize> dutyCycleBuffer;
-extern CircularBuffer<float, bufferSize> illuminanceBuffer;
 
 byte getCommandCode(String cmd);
 
